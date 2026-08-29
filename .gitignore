@@ -1,0 +1,59 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# FastAPI / backend runtime logs
+backend/*.log
+backend/*.err
+backend/*.err.log
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/.vercel/
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo
+frontend/next-env.d.ts
+
+# Frontend runtime logs
+frontend/*.log
+frontend/*.err
+frontend/*.err.log
+
+# Build output and caches
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
