@@ -1,0 +1,18 @@
+{
+  "name": "Dyslexic Diagnostic",
+  "short_name": "DyslexDiag",
+  "description": "Aplikasi asesmen membaca sinkron untuk guru dan siswa.",
+  "start_url": "/teacher/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
