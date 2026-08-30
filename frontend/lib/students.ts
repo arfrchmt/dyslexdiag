@@ -9,12 +9,15 @@ export type StudentListItem = {
   grade_level?: string | null;
   school_origin?: string | null;
   session_code: string;
+  session_date?: string | null;
   status: StudentStatus;
   total_score: number;
   max_score: number;
 };
 
 export type StudentQuestionPerformance = {
+  session_code: string;
+  session_date?: string | null;
   question_id: string;
   prompt: string;
   sequence: number;
@@ -22,10 +25,24 @@ export type StudentQuestionPerformance = {
   max_score: number;
   note: string;
   feeling: string;
+  duration_ms?: number | null;
+  is_example: boolean;
+  question_active: boolean;
+  videos: StudentVideoRecord[];
+};
+
+export type StudentSessionSummary = {
+  code: string;
+  session_date?: string | null;
+  status: StudentStatus;
+  total_score: number;
+  max_score: number;
 };
 
 export type StudentVideoRecord = {
   id: string;
+  sequence: number;
+  question_id: string;
   label: string;
   source: string;
   duration: string;
@@ -35,6 +52,7 @@ export type StudentVideoRecord = {
 
 export type StudentDetail = StudentListItem & {
   created_at: string;
+  sessions: StudentSessionSummary[];
   questions: StudentQuestionPerformance[];
   videos: StudentVideoRecord[];
 };
@@ -53,14 +71,33 @@ function authHeaders(token: string) {
 }
 
 async function assertOk(response: Response, message: string) {
-  if (!response.ok) throw new Error(message);
+  if (!response.ok) throw new Error(`${message} (${response.status})`);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, message: string, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`${message}: timeout`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export async function fetchStudents(token: string) {
-  const response = await fetch(`${apiBase}/students`, {
-    headers: authHeaders(token),
-    cache: "no-store"
-  });
+  const response = await fetchWithTimeout(
+    `${apiBase}/students`,
+    {
+      headers: authHeaders(token),
+      cache: "no-store"
+    },
+    "Gagal mengambil daftar siswa"
+  );
   await assertOk(response, "Gagal mengambil daftar siswa");
   return (await response.json()) as StudentListItem[];
 }
@@ -76,10 +113,14 @@ export async function createStudent(token: string, payload: StudentCreatePayload
 }
 
 export async function fetchStudentDetail(token: string, id: string) {
-  const response = await fetch(`${apiBase}/students/${id}`, {
-    headers: authHeaders(token),
-    cache: "no-store"
-  });
+  const response = await fetchWithTimeout(
+    `${apiBase}/students/${id}`,
+    {
+      headers: authHeaders(token),
+      cache: "no-store"
+    },
+    "Gagal mengambil detail siswa"
+  );
   await assertOk(response, "Gagal mengambil detail siswa");
   return (await response.json()) as StudentDetail;
 }

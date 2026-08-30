@@ -1,9 +1,8 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, Save, UserRound, Wifi } from "lucide-react";
+import { Camera, Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, Save, UserRound, Wifi } from "lucide-react";
 
-import { CameraPositionCard } from "@/components/CameraPositionCard";
 import { StudentStimulus } from "@/components/StudentStimulus";
 import {
   fetchSession,
@@ -12,8 +11,11 @@ import {
   sendAcknowledgment,
   studentLogin,
   updateStudentStatus,
+  uploadCameraPreview,
+  uploadStudentRecording,
   type SessionState
 } from "@/lib/session";
+import { appThemes, getSavedTheme, saveTheme, type AppTheme } from "@/lib/theme";
 
 const feelingOptions = [
   { value: "senang", icon: "🙂", label: "Senyum" },
@@ -47,11 +49,28 @@ export default function StudentPage() {
   const [assembledWordIndexes, setAssembledWordIndexes] = useState<number[]>([]);
   const [shuffledWordBlocks, setShuffledWordBlocks] = useState<WordBlock[]>([]);
   const [seconds, setSeconds] = useState(0);
+  const [questionTimerMs, setQuestionTimerMs] = useState(0);
   const [clicks, setClicks] = useState(0);
   const [saved, setSaved] = useState("Tersimpan lokal");
+  const [recordingState, setRecordingState] = useState("Kamera belum aktif");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [theme, setTheme] = useState<AppTheme>("mit");
   const lastAcknowledgedSequence = useRef<number | null>(null);
+  const questionRenderedAt = useRef<Record<number, number>>({});
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingMetaRef = useRef<{ sequence: number; questionId: string; startedAt: number } | null>(null);
+  const questionDisplayed = Boolean(
+    session &&
+      !session.assessment_finished &&
+      session.active_question_id !== "WAITING" &&
+      session.active_category !== "waiting"
+  );
 
   useEffect(() => {
+    setTheme(getSavedTheme());
     const savedJwt = window.localStorage.getItem("student-jwt") ?? "";
     const savedCode = window.localStorage.getItem("student-session-code") ?? "";
     if (savedJwt && savedCode) {
@@ -72,15 +91,11 @@ export default function StudentPage() {
       try {
         const state = await fetchSession(sessionCode, studentJwt);
         if (!active) return;
-        setSession(state);
-        if (lastAcknowledgedSequence.current !== state.active_sequence) {
-          lastAcknowledgedSequence.current = state.active_sequence;
-          await sendAcknowledgment(sessionCode, studentJwt, state.active_sequence, "QUESTION_RENDERED", {
-            pageVisible: document.visibilityState === "visible",
-            assetStatus: "READY",
-            questionId: state.active_question_id
-          });
+        if (state.force_student_logout) {
+          forceLogoutByTeacher();
+          return;
         }
+        setSession(state);
       } catch (error) {
         if (error instanceof Error && error.message === "SESSION_EXPIRED") {
           expireStudentSession();
@@ -97,6 +112,97 @@ export default function StudentPage() {
   }, [studentJwt, sessionCode]);
 
   useEffect(() => {
+    if (!studentJwt || !sessionCode) return;
+    if (!session) return;
+    if (!session?.camera_enabled) {
+      stopQuestionRecording("camera_disabled");
+      stopCameraStream();
+      setRecordingState("Kamera dinonaktifkan guru");
+      return;
+    }
+    if (!questionDisplayed || !session) {
+      stopQuestionRecording("waiting");
+      if (session?.assessment_finished) {
+        stopCameraStream();
+        setRecordingState("Akses kamera selesai");
+      }
+      return;
+    }
+
+    startQuestionRecording(session).catch(() => setRecordingState("Kamera tidak tersedia"));
+
+    return () => {
+      stopQuestionRecording("question_changed");
+    };
+  }, [questionDisplayed, session?.active_sequence, session?.camera_enabled, sessionCode, studentJwt]);
+
+  useEffect(() => {
+    if (!studentJwt || !sessionCode || !session?.camera_enabled || session.assessment_finished) return;
+    ensureCameraStream()
+      .then(() => {
+        if (!questionDisplayed) setRecordingState("Kamera standby");
+      })
+      .catch(() => setRecordingState("Kamera tidak tersedia"));
+  }, [studentJwt, sessionCode, session?.camera_enabled, session?.assessment_finished, session?.request_student_camera]);
+
+  useEffect(() => {
+    if (!session || !studentJwt || !sessionCode) return;
+    if (session.active_question_id === "WAITING" || session.active_category === "waiting") return;
+    if (lastAcknowledgedSequence.current === session.active_sequence) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const renderedAtMs = performance.now();
+      questionRenderedAt.current[session.active_sequence] = renderedAtMs;
+      setQuestionTimerMs(0);
+      lastAcknowledgedSequence.current = session.active_sequence;
+      sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "QUESTION_RENDERED", {
+        pageVisible: document.visibilityState === "visible",
+        assetStatus: "READY",
+        questionId: session.active_question_id,
+        rendered_at_ms: renderedAtMs
+      }).catch(() => undefined);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [session?.active_question_id, session?.active_sequence, sessionCode, studentJwt]);
+
+  useEffect(() => {
+    if (!session?.active_show_student_timer || !questionDisplayed) {
+      setQuestionTimerMs(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const renderedAtMs = questionRenderedAt.current[session.active_sequence];
+      if (!renderedAtMs) return;
+      setQuestionTimerMs(performance.now() - renderedAtMs);
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [questionDisplayed, session?.active_sequence, session?.active_show_student_timer]);
+
+  useEffect(() => {
+    if (!session || !studentJwt || !sessionCode || !questionDisplayed || !session.camera_enabled) return;
+    let uploading = false;
+    const uploadSnapshot = async () => {
+      if (uploading) return;
+      uploading = true;
+      try {
+        const blob = await captureCameraPreview();
+        if (blob) {
+          await uploadCameraPreview(sessionCode, studentJwt, session.active_sequence, session.active_question_id, blob);
+        }
+      } catch {
+        // Preview is best-effort; recording remains the source of evidence.
+      } finally {
+        uploading = false;
+      }
+    };
+
+    uploadSnapshot();
+    const interval = window.setInterval(uploadSnapshot, 2000);
+    return () => window.clearInterval(interval);
+  }, [questionDisplayed, session?.active_sequence, session?.active_question_id, sessionCode, studentJwt]);
+
+  useEffect(() => {
     function handleFullscreenChange() {
       const active = Boolean(document.fullscreenElement);
       setIsFullscreen(active);
@@ -108,7 +214,11 @@ export default function StudentPage() {
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
   }, [studentJwt, sessionCode]);
 
   useEffect(() => {
@@ -117,15 +227,32 @@ export default function StudentPage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      stopQuestionRecording("unmount");
+      stopCameraStream();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cameraPreviewRef.current && mediaStreamRef.current) {
+      cameraPreviewRef.current.srcObject = mediaStreamRef.current;
+    }
+  }, [localHideSide, session?.hide_student_side]);
+
+  useEffect(() => {
     window.localStorage.setItem("student-feeling-drafts", JSON.stringify(feelingDrafts));
   }, [feelingDrafts]);
 
   useEffect(() => {
     if (!session) return;
+    if (isKnownTheme(session.theme_name)) {
+      setTheme(session.theme_name);
+      saveTheme(session.theme_name);
+    }
     setSelectedFeeling(feelingDrafts[session.active_question_id] ?? "");
     setAssembledWordIndexes([]);
     setShuffledWordBlocks(getAnswerBlocksForQuestion(session));
-  }, [session?.active_question_id, session?.active_options.join("\u0001")]);
+  }, [session?.active_question_id, session?.active_options.join("\u0001"), session?.theme_name]);
 
   const duration = useMemo(() => {
     const minutes = Math.floor(seconds / 60)
@@ -164,11 +291,14 @@ export default function StudentPage() {
     const answer = words.join(" ").toLowerCase().trim();
     const expected = (session.active_correct_answer ?? "").toLowerCase().trim();
     const score = expected && answer === expected ? 10 : 0;
+    const renderedAtMs = questionRenderedAt.current[session.active_sequence] ?? performance.now();
+    const durationMs = Math.max(0, Math.round(performance.now() - renderedAtMs));
     await sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_SYSTEM_SCORE", {
       questionId: session.active_question_id,
       answer,
       expected,
-      score
+      score,
+      duration_ms: durationMs
     });
     setSaved(score > 0 ? "Jawaban benar" : "Jawaban tersimpan");
   }
@@ -193,6 +323,8 @@ export default function StudentPage() {
   }
 
   function expireStudentSession() {
+    stopQuestionRecording("session_expired");
+    stopCameraStream();
     window.localStorage.removeItem("student-jwt");
     window.localStorage.removeItem("student-session-code");
     setStudentJwt("");
@@ -201,7 +333,9 @@ export default function StudentPage() {
     setLoginError("Sesi siswa expired. Masukkan token baru dari guru.");
   }
 
-  function logoutStudent() {
+  function forceLogoutByTeacher() {
+    stopQuestionRecording("teacher_logout");
+    stopCameraStream();
     window.localStorage.removeItem("student-jwt");
     window.localStorage.removeItem("student-session-code");
     setStudentJwt("");
@@ -209,19 +343,150 @@ export default function StudentPage() {
     setSession(null);
     setStudentCode("");
     setSelectedFeeling("");
+    setLoginError("Guru telah mengakhiri akses token siswa.");
+  }
+
+  function logoutStudent() {
+    const confirmed = window.confirm("Logout dari sesi siswa?");
+    if (!confirmed) return;
+    window.localStorage.removeItem("student-jwt");
+    window.localStorage.removeItem("student-session-code");
+    setStudentJwt("");
+    setSessionCode("");
+    setSession(null);
+    setStudentCode("");
+    setSelectedFeeling("");
+    stopQuestionRecording("logout");
+    stopCameraStream();
     lastAcknowledgedSequence.current = null;
+    questionRenderedAt.current = {};
+  }
+
+  async function ensureCameraStream() {
+    if (mediaStreamRef.current) return mediaStreamRef.current;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera API is unavailable");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: {
+        frameRate: { ideal: 25, max: 25 },
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      }
+    });
+    mediaStreamRef.current = stream;
+    setCameraReady(true);
+    if (cameraPreviewRef.current) {
+      cameraPreviewRef.current.srcObject = stream;
+    }
+    return stream;
+  }
+
+  async function startQuestionRecording(currentSession: SessionState) {
+    if (!currentSession.camera_enabled) return;
+    if (mediaRecorderRef.current?.state === "recording") return;
+    const stream = await ensureCameraStream();
+    const mimeType = getSupportedRecordingMimeType();
+    const chunks: Blob[] = [];
+    const meta = {
+      sequence: currentSession.active_sequence,
+      questionId: currentSession.active_question_id,
+      startedAt: performance.now()
+    };
+    recordingChunksRef.current = chunks;
+    recordingMetaRef.current = meta;
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      if (recordingMetaRef.current === meta) {
+        recordingChunksRef.current = [];
+        recordingMetaRef.current = null;
+      }
+      if (!meta || chunks.length === 0) return;
+      const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+      const durationMs = performance.now() - meta.startedAt;
+      setRecordingState("Mengunggah rekaman...");
+      uploadStudentRecording(sessionCode, studentJwt, meta.sequence, meta.questionId, blob, durationMs)
+        .then(() => setRecordingState("Rekaman tersimpan"))
+        .catch(() => setRecordingState("Rekaman belum tersimpan"));
+    };
+    mediaRecorderRef.current = recorder;
+    recorder.start(1000);
+    setRecordingState("Merekam 25fps");
+    sendAcknowledgment(sessionCode, studentJwt, currentSession.active_sequence, "STUDENT_RECORDING_STARTED", {
+      questionId: currentSession.active_question_id,
+      fps: 25,
+      started_at_ms: meta.startedAt
+    }).catch(() => undefined);
+  }
+
+  function stopQuestionRecording(_reason: string) {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    mediaRecorderRef.current = null;
+    recorder.stop();
+  }
+
+  function stopCameraStream() {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    setCameraReady(false);
+    if (cameraPreviewRef.current) {
+      cameraPreviewRef.current.srcObject = null;
+    }
+  }
+
+  async function requestCameraPermission() {
+    if (!session?.camera_enabled) return;
+    setRecordingState("Meminta izin kamera...");
+    try {
+      await ensureCameraStream();
+      setRecordingState(questionDisplayed ? "Kamera siap merekam" : "Kamera standby");
+      if (sessionCode && studentJwt && session) {
+        sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_CAMERA_READY", {
+          questionId: session.active_question_id
+        }).catch(() => undefined);
+      }
+    } catch {
+      setRecordingState("Izin kamera belum diberikan");
+    }
+  }
+
+  function captureCameraPreview() {
+    const video = cameraPreviewRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return Promise.resolve(null);
+    }
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return Promise.resolve(null);
+    context.drawImage(video, 0, 0, width, height);
+    return new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.72);
+    });
   }
 
   async function enterFullscreen() {
     setFullscreenMessage("");
-    if (!document.fullscreenEnabled) {
-      setFullscreenMessage("Browser/perangkat tidak mengizinkan fullscreen.");
+    const element = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    };
+    const requestFullscreen = element.requestFullscreen?.bind(element) ?? element.webkitRequestFullscreen?.bind(element);
+    if (!document.fullscreenEnabled && !element.webkitRequestFullscreen) {
+      setFullscreenMessage("Browser ini tidak mendukung fullscreen halaman. Pada Firefox iPad fitur ini biasanya tidak tersedia.");
       return;
     }
 
     try {
       if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
+        await requestFullscreen?.();
       }
       setIsFullscreen(true);
       if (studentJwt && sessionCode) {
@@ -277,13 +542,28 @@ export default function StudentPage() {
   }
 
   return (
-    <main className="student-shell" onClick={() => setClicks((value) => value + 1)}>
+    <main className={`student-shell theme-${theme}`} onClick={() => setClicks((value) => value + 1)}>
       <header className="student-topbar">
         <div>
           <p className="eyebrow">UI Siswa</p>
-          <h1>Sesi Asesmen Membaca</h1>
         </div>
         <div className="status-strip">
+          <label className="theme-picker" title="Theme">
+            <select
+              value={theme}
+              onChange={(event) => {
+                const nextTheme = event.target.value as AppTheme;
+                setTheme(nextTheme);
+                saveTheme(nextTheme);
+              }}
+            >
+              {appThemes.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>
             <UserRound size={16} /> {session?.student_name ?? "Siswa"}
           </span>
@@ -313,6 +593,9 @@ export default function StudentPage() {
           >
             {hideSidePanel ? <Eye size={16} /> : <EyeOff size={16} />}
           </button>
+          <button className="icon-action" onClick={logoutStudent} type="button" title="Logout siswa" aria-label="Logout siswa">
+            <LogOut size={16} />
+          </button>
         </div>
       </header>
 
@@ -326,22 +609,38 @@ export default function StudentPage() {
         </section>
       ) : null}
 
+      {session?.camera_enabled && !cameraReady ? (
+        <section className="fullscreen-request">
+          <strong>Kamera siswa perlu diizinkan untuk preview dan perekaman.</strong>
+          <button className="primary-button" onClick={requestCameraPermission} type="button">
+            <Camera size={17} />
+            Izinkan kamera
+          </button>
+        </section>
+      ) : null}
+
       {fullscreenMessage ? <p className="error-text fullscreen-error">{fullscreenMessage}</p> : null}
       {session?.assessment_finished ? (
         <section className="fullscreen-request">
           <strong>Asesmen sudah diselesaikan guru.</strong>
         </section>
       ) : null}
+      {hideSidePanel ? <video ref={cameraPreviewRef} autoPlay muted playsInline className="camera-hidden-preview" /> : null}
 
       <section className={hideSidePanel ? "student-grid side-hidden" : "student-grid"}>
         <div className="student-main">
           {session ? (
             <>
-              <StudentStimulus
-                instructionText={session.active_instruction_text}
-                questionId={session.active_question_id}
-                questionText={session.active_question_text}
-              />
+              <div className="student-content-block">
+                <StudentStimulus
+                  instructionText={session.active_instruction_text}
+                  questionId={session.active_question_id}
+                  questionText={session.active_question_text}
+                />
+                {session.active_show_student_timer && questionDisplayed ? (
+                  <div className="student-digital-timer">{formatDigitalTimer(questionTimerMs)}</div>
+                ) : null}
+              </div>
               {session.active_scoring_mode === "system" && session.active_options.length > 0 ? (
                 <section className="response-panel block-answer-panel">
                   <span>{session.active_instruction_text}</span>
@@ -390,14 +689,13 @@ export default function StudentPage() {
             <div className="stimulus">Memuat sesi...</div>
           )}
 
-          <section className="response-panel">
-            <span>Perasaan saat membaca soal ini</span>
+          <section className="response-panel feeling-panel">
             <div className="feeling-grid">
               {feelingOptions.map((feeling) => (
                 <button
                   aria-label={feeling.label}
                   className={selectedFeeling === feeling.value ? "feeling-button selected" : "feeling-button"}
-                  disabled={Boolean(session?.assessment_finished)}
+                  disabled={!questionDisplayed}
                   key={feeling.value}
                   onClick={() => handleFeeling(feeling.value)}
                   title={feeling.label}
@@ -412,7 +710,24 @@ export default function StudentPage() {
 
         {!hideSidePanel ? (
           <aside className="student-side">
-            <CameraPositionCard />
+            <section className="device-panel student-assessment-title">
+              <p className="eyebrow">Asesmen</p>
+              <h2>Sesi Asesmen Membaca</h2>
+            </section>
+            <section className="camera-card live-camera-card">
+              <div className="camera-frame">
+                <video ref={cameraPreviewRef} autoPlay muted playsInline className="camera-video-preview" />
+                <span className="camera-badge">
+                  <Camera size={15} /> Preview
+                </span>
+                <div className="target-box" />
+                <div className="face-oval" />
+              </div>
+              <div className="metric-row">
+                <span>Kamera</span>
+                <strong>{cameraReady ? recordingState : `${recordingState} - klik Izinkan kamera`}</strong>
+              </div>
+            </section>
             <section className="device-panel">
               <h2>Status perangkat</h2>
               <div className="metric-row">
@@ -433,10 +748,10 @@ export default function StudentPage() {
                   <Save size={15} /> {saved}
                 </strong>
               </div>
-              <button className="full" onClick={logoutStudent} type="button">
-                <LogOut size={17} />
-                Logout siswa
-              </button>
+              <div className="metric-row">
+                <span>Rekaman</span>
+                <strong>{recordingState}</strong>
+              </div>
             </section>
           </aside>
         ) : null}
@@ -471,4 +786,27 @@ function shouldShuffleAnswerBlocks(session: SessionState) {
     markerText.includes("blok") ||
     markerText.includes("susun")
   );
+}
+
+function formatDigitalTimer(value: number) {
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  const tenths = Math.floor((Math.max(0, value) % 1000) / 100);
+  return `${minutes}:${seconds}.${tenths}`;
+}
+
+function isKnownTheme(value: string): value is AppTheme {
+  return appThemes.some((theme) => theme.value === value);
+}
+
+function getSupportedRecordingMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+    "video/mp4"
+  ];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
 }

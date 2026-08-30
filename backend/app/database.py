@@ -39,12 +39,22 @@ def ensure_runtime_schema() -> None:
     columns = {column["name"] for column in inspector.get_columns("assessment_sessions")}
     missing_boolean_columns = [
         column
-        for column in ("hide_student_side", "fullscreen_active", "request_student_fullscreen")
+        for column in (
+            "hide_student_side",
+            "fullscreen_active",
+            "request_student_fullscreen",
+            "request_student_camera",
+            "camera_enabled",
+            "force_student_logout",
+        )
         if column not in columns
     ]
     with engine.begin() as connection:
         for column in missing_boolean_columns:
-            default = "false" if engine.dialect.name in {"postgresql", "mysql"} else "0"
+            if column == "camera_enabled":
+                default = "true" if engine.dialect.name in {"postgresql", "mysql"} else "1"
+            else:
+                default = "false" if engine.dialect.name in {"postgresql", "mysql"} else "0"
             connection.execute(
                 text(f"ALTER TABLE assessment_sessions ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT {default}")
             )
@@ -64,10 +74,17 @@ def ensure_runtime_schema() -> None:
             connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN active_options TEXT NOT NULL DEFAULT '[]'"))
         if "active_correct_answer" not in columns:
             connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN active_correct_answer VARCHAR(255)"))
+        if "active_show_student_timer" not in columns:
+            default = "false" if engine.dialect.name in {"postgresql", "mysql"} else "0"
+            connection.execute(
+                text(f"ALTER TABLE assessment_sessions ADD COLUMN active_show_student_timer BOOLEAN NOT NULL DEFAULT {default}")
+            )
         if "active_instruction_text" not in columns:
             connection.execute(
                 text("ALTER TABLE assessment_sessions ADD COLUMN active_instruction_text TEXT NOT NULL DEFAULT 'Ikuti instruksi soal yang tampil.'")
             )
+        if "theme_name" not in columns:
+            connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN theme_name VARCHAR(32) NOT NULL DEFAULT 'mit'"))
         if engine.dialect.name == "postgresql":
             connection.execute(text("ALTER TABLE assessment_sessions ALTER COLUMN active_question_text TYPE TEXT"))
 
@@ -79,9 +96,19 @@ def ensure_runtime_schema() -> None:
 
     if "assessment_items" in table_names:
         item_columns = {column["name"] for column in inspector.get_columns("assessment_items")}
-        if "instruction_text" not in item_columns:
-            with engine.begin() as connection:
+        with engine.begin() as connection:
+            if "instruction_text" not in item_columns:
                 connection.execute(text("ALTER TABLE assessment_items ADD COLUMN instruction_text TEXT NOT NULL DEFAULT ''"))
+            if "is_example" not in item_columns:
+                default = "false" if engine.dialect.name in {"postgresql", "mysql"} else "0"
+                connection.execute(
+                    text(f"ALTER TABLE assessment_items ADD COLUMN is_example BOOLEAN NOT NULL DEFAULT {default}")
+                )
+            if "show_student_timer" not in item_columns:
+                default = "false" if engine.dialect.name in {"postgresql", "mysql"} else "0"
+                connection.execute(
+                    text(f"ALTER TABLE assessment_items ADD COLUMN show_student_timer BOOLEAN NOT NULL DEFAULT {default}")
+                )
 
     if "student_access_tokens" not in table_names:
         return

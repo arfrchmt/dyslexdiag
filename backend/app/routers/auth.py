@@ -102,7 +102,9 @@ def create_student_token(
         active_scoring_mode="waiting",
         active_options="[]",
         active_correct_answer=None,
+        camera_enabled=payload.camera_enabled,
         status="WAITING_TO_START",
+        hide_student_side=True,
     )
     db.add(session)
     db.flush()

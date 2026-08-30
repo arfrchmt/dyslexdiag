@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:student": "next dev -p 3001",
-    "dev:teacher": "next dev -p 3002",
+    "dev:student": "set NEXT_DIST_DIR=.next-student&& next dev -p 3002",
+    "dev:teacher": "set NEXT_DIST_DIR=.next-teacher&& next dev -p 3001",
     "start:student": "python serve_static.py --port 3001",
     "start:teacher": "python serve_static.py --port 3002",
     "build": "next build",

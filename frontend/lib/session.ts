@@ -11,10 +11,15 @@ export type SessionState = {
   active_scoring_mode: string;
   active_options: string[];
   active_correct_answer?: string | null;
+  active_show_student_timer: boolean;
+  camera_enabled: boolean;
+  theme_name: string;
   status: string;
   hide_student_side: boolean;
   fullscreen_active: boolean;
   request_student_fullscreen: boolean;
+  request_student_camera: boolean;
+  force_student_logout: boolean;
   started_at?: string | null;
   finished_at?: string | null;
   assessment_finished: boolean;
@@ -43,12 +48,24 @@ export type StudentTokenResponse = {
   expires_at: string;
 };
 
-export const apiBase =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:8000`
-    : "http://127.0.0.1:8000");
+export let apiBase = initialApiBase();
 export const sessionCode = process.env.NEXT_PUBLIC_SESSION_CODE ?? "ASM-001";
+
+function initialApiBase() {
+  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (envBase) return envBase;
+  if (typeof window === "undefined") return "http://127.0.0.1:8000";
+  return `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === "https:" ? "8443" : "8000"}`;
+}
+
+function apiBaseCandidates() {
+  const candidates = [apiBase];
+  if (typeof window !== "undefined") {
+    candidates.push(`${window.location.protocol}//${window.location.hostname}:8443`);
+    candidates.push(`${window.location.protocol}//${window.location.hostname}:8000`);
+  }
+  return [...new Set(candidates)];
+}
 
 function authHeaders(token?: string): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -59,7 +76,7 @@ function assertApiOk(response: Response, message: string) {
     throw new Error("SESSION_EXPIRED");
   }
   if (!response.ok) {
-    throw new Error(message);
+    throw new Error(`${message} (${response.status})`);
   }
 }
 
@@ -87,34 +104,50 @@ export function formatExpiry(token: string) {
 }
 
 export async function teacherLogin(username: string, password: string) {
-  const response = await fetch(`${apiBase}/auth/teacher/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password })
-  });
+  let lastError: unknown = null;
+  for (const base of apiBaseCandidates()) {
+    try {
+      const response = await fetch(`${base}/auth/teacher/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
 
-  assertApiOk(response, "Login guru gagal");
-
-  return (await response.json()) as AuthResponse;
+      assertApiOk(response, "Login guru gagal");
+      apiBase = base;
+      return (await response.json()) as AuthResponse;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Login guru gagal");
 }
 
 export async function studentLogin(code: string) {
-  const response = await fetch(`${apiBase}/auth/student/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code })
-  });
+  let lastError: unknown = null;
+  for (const base of apiBaseCandidates()) {
+    try {
+      const response = await fetch(`${base}/auth/student/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      });
 
-  assertApiOk(response, "Kode token siswa tidak valid");
-
-  return (await response.json()) as StudentAuthResponse;
+      assertApiOk(response, "Kode token siswa tidak valid");
+      apiBase = base;
+      return (await response.json()) as StudentAuthResponse;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Kode token siswa tidak valid");
 }
 
-export async function generateStudentToken(token: string, student_name = "Siswa 01", student_id?: string) {
+export async function generateStudentToken(token: string, student_name = "Siswa 01", student_id?: string, cameraEnabled = true) {
   const response = await fetch(`${apiBase}/auth/student-tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ student_id, student_name, expires_hours: 8 })
+    body: JSON.stringify({ student_id, student_name, expires_hours: 8, camera_enabled: cameraEnabled })
   });
 
   assertApiOk(response, "Gagal membuat token siswa");
@@ -157,6 +190,8 @@ export async function navigateQuestion(
     scoring_mode?: string;
     options?: string[];
     correct_answer?: string | null;
+    is_example?: boolean;
+    show_student_timer?: boolean;
   }
 ) {
   const response = await fetch(`${apiBase}/sessions/${code}/navigate`, {
@@ -169,7 +204,9 @@ export async function navigateQuestion(
       category: metadata?.category ?? "phonological_awareness",
       scoring_mode: metadata?.scoring_mode ?? "teacher_rubric",
       options: metadata?.options ?? [],
-      correct_answer: metadata?.correct_answer ?? null
+      correct_answer: metadata?.correct_answer ?? null,
+      is_example: metadata?.is_example ?? false,
+      show_student_timer: metadata?.show_student_timer ?? false
     })
   });
 
@@ -190,6 +227,48 @@ export async function sendAcknowledgment(code: string, token: string, sequence: 
     })
   });
   assertApiOk(response, "Gagal mengirim acknowledgement");
+}
+
+export async function uploadStudentRecording(
+  code: string,
+  token: string,
+  sequence: number,
+  questionId: string,
+  blob: Blob,
+  durationMs: number
+) {
+  const params = new URLSearchParams({
+    sequence: String(sequence),
+    question_id: questionId,
+    duration_ms: String(Math.max(0, Math.round(durationMs)))
+  });
+  const response = await fetch(`${apiBase}/sessions/${code}/recordings?${params.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": blob.type || "video/webm", ...authHeaders(token) },
+    body: blob
+  });
+  assertApiOk(response, "Gagal mengunggah rekaman siswa");
+  return response.json() as Promise<{ id: string; source: string; size_bytes: number }>;
+}
+
+export async function uploadCameraPreview(
+  code: string,
+  token: string,
+  sequence: number,
+  questionId: string,
+  blob: Blob
+) {
+  const params = new URLSearchParams({
+    sequence: String(sequence),
+    question_id: questionId
+  });
+  const response = await fetch(`${apiBase}/sessions/${code}/camera-preview?${params.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": blob.type || "image/jpeg", ...authHeaders(token) },
+    body: blob
+  });
+  assertApiOk(response, "Gagal mengunggah preview kamera siswa");
+  return response.json() as Promise<{ source: string; size_bytes: number }>;
 }
 
 export async function saveGrade(code: string, token: string, sequence: number, fluency: number, accuracy: number, confidence: number) {
@@ -235,10 +314,44 @@ export async function fetchTimeline(code: string, token: string) {
   return (await response.json()) as TimelineEvent[];
 }
 
+export async function fetchGradedQuestionIds(code: string, token: string) {
+  const response = await fetch(`${apiBase}/sessions/${code}/graded-question-ids`, {
+    headers: authHeaders(token),
+    cache: "no-store"
+  });
+
+  assertApiOk(response, "Gagal mengambil status nilai soal");
+
+  return (await response.json()) as { question_ids: string[] };
+}
+
+export async function fetchQuestionScores(code: string, token: string) {
+  const response = await fetch(`${apiBase}/sessions/${code}/question-scores`, {
+    headers: authHeaders(token),
+    cache: "no-store"
+  });
+
+  assertApiOk(response, "Gagal mengambil skor soal");
+
+  return (await response.json()) as {
+    scores: Record<string, { fluency: number; accuracy: number; confidence: number; total: number; sequence: number }>;
+  };
+}
+
+export async function forceStudentLogout(code: string, token: string) {
+  const response = await fetch(`${apiBase}/sessions/${code}/student-logout`, {
+    method: "POST",
+    headers: authHeaders(token)
+  });
+
+  assertApiOk(response, "Gagal logout siswa");
+  return (await response.json()) as SessionState;
+}
+
 export async function updateUiControls(
   code: string,
   token: string,
-  controls: Partial<Pick<SessionState, "hide_student_side" | "request_student_fullscreen">>
+  controls: Partial<Pick<SessionState, "hide_student_side" | "request_student_fullscreen" | "request_student_camera" | "theme_name">>
 ) {
   const response = await fetch(`${apiBase}/sessions/${code}/ui-controls`, {
     method: "PATCH",

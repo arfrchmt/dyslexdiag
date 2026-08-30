@@ -36,10 +36,25 @@ export function StudentStimulus({ questionId, questionText, instructionText, pre
 function parseStimulusContent(value: string) {
   const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const sourceLines = lines.length > 0 ? lines : [value.trim()];
-  return sourceLines.map((line) => {
-    const imageUrl = getImageUrl(line);
-    return imageUrl ? { type: "image", value: imageUrl } : { type: "text", value: line };
-  });
+  return sourceLines.flatMap((line) => splitLineByImageUrl(line));
+}
+
+function splitLineByImageUrl(line: string) {
+  const parts: Array<{ type: "image" | "text"; value: string }> = [];
+  const imageUrlPattern = /https?:\/\/\S+\.(?:jpe?g|png|bmp|svg)(?:\?\S*)?/gi;
+  let cursor = 0;
+  for (const match of line.matchAll(imageUrlPattern)) {
+    const index = match.index ?? 0;
+    const before = line.slice(cursor, index).trim();
+    if (before) parts.push({ type: "text", value: before });
+    parts.push({ type: "image", value: match[0] });
+    cursor = index + match[0].length;
+  }
+  const after = line.slice(cursor).trim();
+  if (after) parts.push({ type: "text", value: after });
+  if (parts.length > 0) return parts;
+  const imageUrl = getImageUrl(line);
+  return imageUrl ? [{ type: "image", value: imageUrl }] : [{ type: "text", value: line }];
 }
 
 function getImageUrl(value: string) {

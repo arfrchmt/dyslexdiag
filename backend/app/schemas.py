@@ -15,10 +15,15 @@ class SessionState(BaseModel):
     active_scoring_mode: str = "teacher_rubric"
     active_options: list[str] = Field(default_factory=list)
     active_correct_answer: Optional[str] = None
+    active_show_student_timer: bool = False
+    camera_enabled: bool = True
+    theme_name: str = "mit"
     status: str
     hide_student_side: bool = False
     fullscreen_active: bool = False
     request_student_fullscreen: bool = False
+    request_student_camera: bool = False
+    force_student_logout: bool = False
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     assessment_finished: bool = False
@@ -37,6 +42,8 @@ class NavigationCommand(BaseModel):
     scoring_mode: str = "teacher_rubric"
     options: list[str] = Field(default_factory=list)
     correct_answer: Optional[str] = None
+    is_example: bool = False
+    show_student_timer: bool = False
 
 
 class AcknowledgmentCreate(BaseModel):
@@ -68,6 +75,8 @@ class TimelineEventRead(BaseModel):
 class SessionUiControlUpdate(BaseModel):
     hide_student_side: Optional[bool] = None
     request_student_fullscreen: Optional[bool] = None
+    request_student_camera: Optional[bool] = None
+    theme_name: Optional[str] = None
 
 
 class StudentStatusUpdate(BaseModel):
@@ -97,6 +106,7 @@ class StudentTokenCreate(BaseModel):
     student_id: Optional[str] = None
     student_name: str = "Siswa 01"
     expires_hours: int = Field(default=8, ge=1, le=72)
+    camera_enabled: bool = True
 
 
 class StudentTokenResponse(BaseModel):
@@ -126,23 +136,24 @@ class StudentListItem(BaseModel):
     grade_level: Optional[str] = None
     school_origin: Optional[str] = None
     session_code: str = "Belum dibuat"
+    session_date: Optional[str] = None
     status: str = "belum"
     total_score: int = 0
     max_score: int = 30
 
 
-class StudentQuestionPerformance(BaseModel):
-    question_id: str
-    prompt: str
-    sequence: int
-    score: int
+class StudentSessionSummary(BaseModel):
+    code: str
+    session_date: Optional[str] = None
+    status: str = "belum"
+    total_score: int = 0
     max_score: int = 30
-    note: str = ""
-    feeling: str = ""
 
 
 class StudentVideoRecordRead(BaseModel):
     id: str
+    sequence: int = 0
+    question_id: str = ""
     label: str
     source: str
     duration: str
@@ -150,8 +161,25 @@ class StudentVideoRecordRead(BaseModel):
     status: str
 
 
+class StudentQuestionPerformance(BaseModel):
+    session_code: str = ""
+    session_date: Optional[str] = None
+    question_id: str
+    prompt: str
+    sequence: int
+    score: int
+    max_score: int = 30
+    note: str = ""
+    feeling: str = ""
+    duration_ms: Optional[float] = None
+    is_example: bool = False
+    question_active: bool = True
+    videos: list[StudentVideoRecordRead] = Field(default_factory=list)
+
+
 class StudentPerformanceDetail(StudentListItem):
     created_at: str
+    sessions: list[StudentSessionSummary] = Field(default_factory=list)
     questions: list[StudentQuestionPerformance] = Field(default_factory=list)
     videos: list[StudentVideoRecordRead] = Field(default_factory=list)
 
@@ -168,6 +196,8 @@ class AssessmentItemCreate(BaseModel):
     scoring_mode: str = "teacher_rubric"
     sort_order: int = 0
     is_active: bool = True
+    is_example: bool = False
+    show_student_timer: bool = False
 
 
 class AssessmentItemStatusUpdate(BaseModel):

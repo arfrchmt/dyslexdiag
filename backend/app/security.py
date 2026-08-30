@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import secrets
 import string
+from typing import Optional
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -25,7 +26,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
-def create_jwt(subject: str, role: str, extra: dict | None = None) -> str:
+def create_jwt(subject: str, role: str, extra: Optional[dict] = None) -> str:
     expires_at = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {"sub": subject, "role": role, "exp": expires_at}
     if extra:
@@ -105,7 +106,7 @@ def generate_student_code(length: int = 8) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(4))
 
 
-def find_valid_student_token(db: Session, code: str) -> StudentAccessToken | None:
+def find_valid_student_token(db: Session, code: str) -> Optional[StudentAccessToken]:
     normalized = code.strip().lower()
     hint = normalized[:4]
     candidates = (

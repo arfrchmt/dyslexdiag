@@ -18,6 +18,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "http://192.168.11.131:3001",
         "http://192.168.11.131:3002",
+        "https://localhost:3001",
+        "https://localhost:3002",
+        "https://127.0.0.1:3001",
+        "https://127.0.0.1:3002",
+        "https://192.168.11.131:3001",
+        "https://192.168.11.131:3002",
     ]
 
     model_config = SettingsConfigDict(

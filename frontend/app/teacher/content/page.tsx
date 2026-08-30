@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Edit3, Layers3, Plus, Power, Save, X } from "lucide-react";
+import { ArrowLeft, Edit3, Layers3, Plus, Save, X } from "lucide-react";
 
 import {
   assessmentCategories,
@@ -21,19 +21,24 @@ export default function AssessmentContentPage() {
   const [items, setItems] = useState<AssessmentItem[]>([]);
   const [category, setCategory] = useState<AssessmentCategory>("phonological_awareness");
   const [scoringMode, setScoringMode] = useState<ScoringMode>("teacher_rubric");
-  const [itemCode, setItemCode] = useState("");
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [instructionText, setInstructionText] = useState("");
   const [stimulus, setStimulus] = useState("");
   const [options, setOptions] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
+  const [isExample, setIsExample] = useState(false);
+  const [showStudentTimer, setShowStudentTimer] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [filterCategory, setFilterCategory] = useState<AssessmentCategory | "all">("all");
   const [editingItem, setEditingItem] = useState<AssessmentItem | null>(null);
 
   const nextOrder = useMemo(() => editingItem?.sort_order ?? items.length + 1, [editingItem?.sort_order, items.length]);
+  const generatedItemCode = useMemo(
+    () => editingItem?.item_code ?? createNextItemCode(category, items),
+    [category, editingItem?.item_code, items]
+  );
   const filteredItems = useMemo(
     () => (filterCategory === "all" ? items : items.filter((item) => item.category === filterCategory)),
     [filterCategory, items]
@@ -67,7 +72,7 @@ export default function AssessmentContentPage() {
     try {
       const token = window.localStorage.getItem("teacher-jwt") ?? "";
       const payload = {
-        item_code: itemCode,
+        item_code: generatedItemCode,
         category,
         title,
         prompt,
@@ -80,7 +85,9 @@ export default function AssessmentContentPage() {
         correct_answer: correctAnswer || null,
         scoring_mode: scoringMode,
         sort_order: nextOrder,
-        is_active: editingItem?.is_active ?? true
+        is_active: editingItem?.is_active ?? true,
+        is_example: isExample,
+        show_student_timer: showStudentTimer
       };
       if (editingItem) {
         await updateAssessmentItem(token, editingItem.id, payload);
@@ -98,26 +105,28 @@ export default function AssessmentContentPage() {
 
   function resetForm() {
     setEditingItem(null);
-    setItemCode("");
     setTitle("");
     setPrompt("");
     setInstructionText("");
     setStimulus("");
     setOptions("");
     setCorrectAnswer("");
+    setIsExample(false);
+    setShowStudentTimer(false);
   }
 
   function startEdit(item: AssessmentItem) {
     setEditingItem(item);
     setCategory(item.category);
     setScoringMode(item.scoring_mode);
-    setItemCode(item.item_code);
     setTitle(item.title);
     setPrompt(item.prompt);
     setInstructionText(item.instruction_text);
     setStimulus(item.stimulus);
     setOptions(item.options.join("\n"));
     setCorrectAnswer(item.correct_answer ?? "");
+    setIsExample(item.is_example);
+    setShowStudentTimer(item.show_student_timer);
     setError("");
   }
 
@@ -172,7 +181,7 @@ export default function AssessmentContentPage() {
               </select>
             </label>
             <label>
-              <span>Mode penilaian</span>
+              <span>Jenis penilaian</span>
               <select value={scoringMode} onChange={(event) => setScoringMode(event.target.value as ScoringMode)}>
                 {scoringModes.map((mode) => (
                   <option key={mode.value} value={mode.value}>
@@ -183,13 +192,21 @@ export default function AssessmentContentPage() {
             </label>
             <label>
               <span>Kode soal</span>
-              <input required value={itemCode} onChange={(event) => setItemCode(event.target.value.toUpperCase())} />
+              <input readOnly value={generatedItemCode} />
             </label>
             <label>
               <span>Judul</span>
               <input required value={title} onChange={(event) => setTitle(event.target.value)} />
             </label>
           </div>
+          <label className="check-control">
+            <input checked={isExample} onChange={(event) => setIsExample(event.target.checked)} type="checkbox" />
+            <span>Soal contoh, tidak dihitung dalam rekap nilai</span>
+          </label>
+          <label className="check-control">
+            <input checked={showStudentTimer} onChange={(event) => setShowStudentTimer(event.target.checked)} type="checkbox" />
+            <span>Tampilkan timer digital di sisi siswa</span>
+          </label>
           <label>
             <span>Instruksi</span>
             <textarea required value={prompt} onChange={(event) => setPrompt(event.target.value)} />
@@ -258,24 +275,32 @@ export default function AssessmentContentPage() {
           <div className="content-list">
             {filteredItems.map((item) => (
               <article className={item.is_active ? "content-item" : "content-item inactive"} key={item.id}>
-                <div>
-                  <span>{item.item_code}</span>
-                  <strong>{item.title}</strong>
-                  <em>{categoryLabel(item.category)} | {item.scoring_mode}</em>
-                </div>
-                <div className="content-actions">
-                  <button className="status-toggle" onClick={() => startEdit(item)} type="button">
-                    <Edit3 size={15} />
-                    Edit
-                  </button>
-                  <button
-                    className={item.is_active ? "status-toggle active" : "status-toggle"}
-                    onClick={() => toggleItemActive(item)}
-                    type="button"
-                  >
-                    <Power size={15} />
-                    {item.is_active ? "Aktif" : "Nonaktif"}
-                  </button>
+                <div className="content-item-head">
+                  <div className="content-item-meta">
+                    <span>{item.item_code}</span>
+                    <strong>{item.title}</strong>
+                    <em>{categoryLabel(item.category)} | {item.scoring_mode}{item.is_example ? " | Contoh" : ""}{item.show_student_timer ? " | Timer siswa" : ""}</em>
+                  </div>
+                  <div className="content-actions">
+                    <button
+                      className="status-toggle"
+                      onClick={() => startEdit(item)}
+                      type="button"
+                      title="Edit soal"
+                      aria-label={`Edit ${item.item_code}`}
+                    >
+                      <Edit3 size={15} />
+                    </button>
+                    <button
+                      className={item.is_active ? "status-switch active" : "status-switch"}
+                      onClick={() => toggleItemActive(item)}
+                      type="button"
+                      title={item.is_active ? "Nonaktifkan soal" : "Aktifkan soal"}
+                      aria-label={item.is_active ? `Nonaktifkan ${item.item_code}` : `Aktifkan ${item.item_code}`}
+                    >
+                      <span />
+                    </button>
+                  </div>
                 </div>
                 <p>{item.prompt}</p>
                 <p>{item.instruction_text}</p>
@@ -287,4 +312,23 @@ export default function AssessmentContentPage() {
       </section>
     </main>
   );
+}
+
+const categoryCodePrefixes: Record<AssessmentCategory, string> = {
+  intelligence_fluid: "IF",
+  reading_assessment: "RA",
+  phonological_awareness: "PA",
+  rapid_naming: "RN",
+  writing: "WR"
+};
+
+function createNextItemCode(category: AssessmentCategory, items: AssessmentItem[]) {
+  const prefix = categoryCodePrefixes[category];
+  const maxNumber = items
+    .filter((item) => item.category === category && item.item_code.startsWith(prefix))
+    .map((item) => Number(item.item_code.slice(prefix.length)))
+    .filter((value) => Number.isFinite(value))
+    .reduce((max, value) => Math.max(max, value), 0);
+
+  return `${prefix}${String(maxNumber + 1).padStart(3, "0")}`;
 }

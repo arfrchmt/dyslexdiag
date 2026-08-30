@@ -23,6 +23,7 @@ htmlcov/
 backend/*.log
 backend/*.err
 backend/*.err.log
+backend/media/
 
 # Node / Next.js
 frontend/node_modules/

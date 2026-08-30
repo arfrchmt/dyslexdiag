@@ -5,13 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AssessmentSession, Student, SubjectiveGrade, TeacherNote, TimelineEvent
+from app.models import AssessmentItem, AssessmentSession, Student, StudentVideoRecord, SubjectiveGrade, TeacherNote, TimelineEvent
 from app.schemas import (
     StudentCreate,
     StudentListItem,
     StudentPerformanceDetail,
     StudentQuestionPerformance,
     StudentRead,
+    StudentSessionSummary,
+    StudentVideoRecordRead,
 )
 from app.security import require_teacher
 
@@ -35,9 +37,19 @@ def latest_session(db: Session, student_id: str) -> Optional[AssessmentSession]:
     )
 
 
+def student_sessions(db: Session, student_id: str) -> list[AssessmentSession]:
+    return (
+        db.query(AssessmentSession)
+        .filter_by(student_id=student_id)
+        .order_by(AssessmentSession.updated_at.desc(), AssessmentSession.started_at.desc())
+        .all()
+    )
+
+
 def latest_grade_total(db: Session, session: Optional[AssessmentSession]) -> int:
     if not session:
         return 0
+    example_sequences = assessment_example_sequences(db, session)
     latest_grades = (
         db.query(SubjectiveGrade)
         .filter_by(session_id=session.id)
@@ -46,9 +58,49 @@ def latest_grade_total(db: Session, session: Optional[AssessmentSession]) -> int
     )
     totals_by_sequence: dict[int, int] = {}
     for grade in latest_grades:
+        if grade.sequence in example_sequences:
+            continue
         if grade.sequence not in totals_by_sequence:
             totals_by_sequence[grade.sequence] = grade.total
     return sum(totals_by_sequence.values())
+
+
+def latest_max_score(db: Session, session: Optional[AssessmentSession]) -> int:
+    if not session:
+        return 30
+    example_sequences = assessment_example_sequences(db, session)
+    issued_sequences = {
+        event.sequence
+        for event in db.query(TimelineEvent)
+        .filter_by(session_id=session.id, event_type="QUESTION_ISSUED")
+        .all()
+        if event.sequence not in example_sequences
+    }
+    return max(1, len(issued_sequences)) * 30
+
+
+def assessment_example_sequences(db: Session, session: AssessmentSession) -> set[int]:
+    events = (
+        db.query(TimelineEvent)
+        .filter_by(session_id=session.id, event_type="QUESTION_ISSUED")
+        .order_by(TimelineEvent.created_at.desc())
+        .all()
+    )
+    example_sequences: set[int] = set()
+    for event in events:
+        try:
+            payload = json.loads(event.payload or "{}")
+        except json.JSONDecodeError:
+            continue
+        question_id = payload.get("question_id", "")
+        if payload.get("is_example") is True:
+            example_sequences.add(event.sequence)
+            continue
+        if question_id:
+            item = db.query(AssessmentItem).filter_by(item_code=question_id).first()
+            if item and item.is_example:
+                example_sequences.add(event.sequence)
+    return example_sequences
 
 
 def to_list_item(db: Session, student: Student) -> StudentListItem:
@@ -60,9 +112,131 @@ def to_list_item(db: Session, student: Student) -> StudentListItem:
         grade_level=student.grade_level,
         school_origin=student.school_origin,
         session_code=session.code if session else "Belum dibuat",
+        session_date=(session.started_at or session.updated_at).isoformat() if session else None,
         status=session_status(session),
         total_score=latest_grade_total(db, session),
+        max_score=latest_max_score(db, session),
     )
+
+
+def session_date(session: AssessmentSession) -> str:
+    return (session.started_at or session.updated_at).isoformat()
+
+
+def session_summary(db: Session, session: AssessmentSession) -> StudentSessionSummary:
+    return StudentSessionSummary(
+        code=session.code,
+        session_date=session_date(session),
+        status=session_status(session),
+        total_score=latest_grade_total(db, session),
+        max_score=latest_max_score(db, session),
+    )
+
+
+def video_record_to_read(video: StudentVideoRecord) -> StudentVideoRecordRead:
+    duration_seconds = (video.duration_ms or 0) / 1000
+    return StudentVideoRecordRead(
+        id=video.id,
+        sequence=video.sequence,
+        question_id=video.question_id,
+        label=f"Seq {video.sequence} - {video.question_id}",
+        source=f"/media/{video.file_path}",
+        duration=f"{duration_seconds:.1f} dtk",
+        captured_at=video.created_at.isoformat(),
+        status="tersedia",
+    )
+
+
+def session_questions(db: Session, session: AssessmentSession) -> list[StudentQuestionPerformance]:
+    grades = (
+        db.query(SubjectiveGrade)
+        .filter_by(session_id=session.id)
+        .order_by(SubjectiveGrade.created_at.desc())
+        .all()
+    )
+    notes = (
+        db.query(TeacherNote)
+        .filter_by(session_id=session.id)
+        .order_by(TeacherNote.created_at.desc())
+        .all()
+    )
+    events = (
+        db.query(TimelineEvent)
+        .filter_by(session_id=session.id)
+        .order_by(TimelineEvent.created_at.desc())
+        .all()
+    )
+    videos = (
+        db.query(StudentVideoRecord)
+        .filter_by(session_id=session.id)
+        .order_by(StudentVideoRecord.created_at.desc())
+        .all()
+    )
+    videos_by_sequence: dict[int, list[StudentVideoRecordRead]] = {}
+    for video in videos:
+        videos_by_sequence.setdefault(video.sequence, []).append(video_record_to_read(video))
+
+    grade_by_sequence: dict[int, SubjectiveGrade] = {}
+    for grade in grades:
+        grade_by_sequence.setdefault(grade.sequence, grade)
+
+    note_by_sequence: dict[int, str] = {}
+    for note in notes:
+        note_by_sequence.setdefault(note.sequence, note.note)
+
+    question_by_sequence: dict[int, tuple[str, str]] = {
+        session.active_sequence: (session.active_question_id, session.active_question_text)
+    }
+    feeling_by_sequence: dict[int, str] = {}
+    duration_by_sequence: dict[int, float] = {}
+    example_sequences = assessment_example_sequences(db, session)
+    for event in events:
+        if event.event_type == "QUESTION_ISSUED":
+            try:
+                payload = json.loads(event.payload)
+                question_by_sequence.setdefault(
+                    event.sequence,
+                    (payload.get("question_id", f"Seq {event.sequence}"), payload.get("question_text", "")),
+                )
+            except json.JSONDecodeError:
+                pass
+        if event.event_type == "STUDENT_FEELING_SELECTED":
+            try:
+                payload = json.loads(event.payload)
+                feeling_by_sequence.setdefault(event.sequence, payload.get("feeling", ""))
+            except json.JSONDecodeError:
+                pass
+        if event.event_type in {"STUDENT_SYSTEM_SCORE", "TEACHER_RESPONSE_TIME"}:
+            try:
+                payload = json.loads(event.payload)
+                duration_ms = payload.get("duration_ms")
+                if isinstance(duration_ms, (int, float)):
+                    duration_by_sequence.setdefault(event.sequence, float(duration_ms))
+            except json.JSONDecodeError:
+                pass
+
+    sequences = sorted(set(question_by_sequence) | set(grade_by_sequence) | set(note_by_sequence))
+    questions: list[StudentQuestionPerformance] = []
+    for sequence in sequences:
+        question_id, prompt = question_by_sequence.get(sequence, (f"Seq {sequence}", ""))
+        item = db.query(AssessmentItem).filter_by(item_code=question_id).first()
+        questions.append(
+            StudentQuestionPerformance(
+                session_code=session.code,
+                session_date=session_date(session),
+                sequence=sequence,
+                question_id=question_id,
+                prompt=prompt,
+                score=grade_by_sequence[sequence].total if sequence in grade_by_sequence else 0,
+                note=note_by_sequence.get(sequence, ""),
+                feeling=feeling_by_sequence.get(sequence, ""),
+                duration_ms=duration_by_sequence.get(sequence),
+                is_example=sequence in example_sequences,
+                question_active=item.is_active if item else True,
+                videos=videos_by_sequence.get(sequence, []),
+            )
+        )
+    return questions
 
 
 @router.get("", response_model=list[StudentListItem])
@@ -95,74 +269,25 @@ def student_detail(student_id: str, _teacher=Depends(require_teacher), db: Sessi
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    session = latest_session(db, student.id)
+    sessions = student_sessions(db, student.id)
+    session = sessions[0] if sessions else None
     item = to_list_item(db, student)
     questions: list[StudentQuestionPerformance] = []
-    if session:
-        grades = (
-            db.query(SubjectiveGrade)
-            .filter_by(session_id=session.id)
-            .order_by(SubjectiveGrade.created_at.desc())
+    videos: list[StudentVideoRecordRead] = []
+    for session_entry in sessions:
+        questions.extend(session_questions(db, session_entry))
+        session_videos = (
+            db.query(StudentVideoRecord)
+            .filter_by(session_id=session_entry.id)
+            .order_by(StudentVideoRecord.created_at.desc())
             .all()
         )
-        notes = (
-            db.query(TeacherNote)
-            .filter_by(session_id=session.id)
-            .order_by(TeacherNote.created_at.desc())
-            .all()
-        )
-        events = (
-            db.query(TimelineEvent)
-            .filter_by(session_id=session.id)
-            .order_by(TimelineEvent.created_at.desc())
-            .all()
-        )
-
-        grade_by_sequence: dict[int, SubjectiveGrade] = {}
-        for grade in grades:
-            grade_by_sequence.setdefault(grade.sequence, grade)
-
-        note_by_sequence: dict[int, str] = {}
-        for note in notes:
-            note_by_sequence.setdefault(note.sequence, note.note)
-
-        question_by_sequence: dict[int, tuple[str, str]] = {
-            session.active_sequence: (session.active_question_id, session.active_question_text)
-        }
-        feeling_by_sequence: dict[int, str] = {}
-        for event in events:
-            if event.event_type == "QUESTION_ISSUED":
-                try:
-                    payload = json.loads(event.payload)
-                    question_by_sequence.setdefault(
-                        event.sequence,
-                        (payload.get("question_id", f"Seq {event.sequence}"), payload.get("question_text", "")),
-                    )
-                except json.JSONDecodeError:
-                    pass
-            if event.event_type == "STUDENT_FEELING_SELECTED":
-                try:
-                    payload = json.loads(event.payload)
-                    feeling_by_sequence.setdefault(event.sequence, payload.get("feeling", ""))
-                except json.JSONDecodeError:
-                    pass
-
-        sequences = sorted(set(question_by_sequence) | set(grade_by_sequence) | set(note_by_sequence))
-        questions = [
-            StudentQuestionPerformance(
-                sequence=sequence,
-                question_id=question_by_sequence.get(sequence, (f"Seq {sequence}", ""))[0],
-                prompt=question_by_sequence.get(sequence, ("", ""))[1],
-                score=grade_by_sequence[sequence].total if sequence in grade_by_sequence else 0,
-                note=note_by_sequence.get(sequence, ""),
-                feeling=feeling_by_sequence.get(sequence, ""),
-            )
-            for sequence in sequences
-        ]
+        videos.extend(video_record_to_read(video) for video in session_videos)
 
     return StudentPerformanceDetail(
         **item.model_dump(),
         created_at=student.created_at.isoformat(),
+        sessions=[session_summary(db, session_entry) for session_entry in sessions],
         questions=questions,
-        videos=[],
+        videos=videos,
     )

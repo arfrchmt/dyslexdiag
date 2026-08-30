@@ -22,6 +22,8 @@ export type AssessmentItem = {
   scoring_mode: ScoringMode;
   sort_order: number;
   is_active: boolean;
+  is_example: boolean;
+  show_student_timer: boolean;
   created_at: string;
 };
 
@@ -34,9 +36,9 @@ export const assessmentCategories: Array<{ value: AssessmentCategory; label: str
 ];
 
 export const scoringModes: Array<{ value: ScoringMode; label: string }> = [
-  { value: "system", label: "Skor sistem" },
-  { value: "teacher_rubric", label: "Rubrik guru" },
-  { value: "binary", label: "Benar / salah" },
+  { value: "system", label: "Dinilai sistem / kunci jawaban" },
+  { value: "binary", label: "Dinilai guru: benar / salah" },
+  { value: "teacher_rubric", label: "Dinilai guru: slider nilai" },
   { value: "upload", label: "Upload foto" }
 ];
 

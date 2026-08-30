@@ -29,10 +29,15 @@ class AssessmentSession(Base):
     active_scoring_mode: Mapped[str] = mapped_column(String(32), default="teacher_rubric")
     active_options: Mapped[str] = mapped_column(Text, default="[]")
     active_correct_answer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    active_show_student_timer: Mapped[bool] = mapped_column(Boolean, default=False)
+    camera_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    theme_name: Mapped[str] = mapped_column(String(32), default="mit")
     status: Mapped[str] = mapped_column(String(32), default="READY")
     hide_student_side: Mapped[bool] = mapped_column(Boolean, default=False)
     fullscreen_active: Mapped[bool] = mapped_column(Boolean, default=False)
     request_student_fullscreen: Mapped[bool] = mapped_column(Boolean, default=False)
+    request_student_camera: Mapped[bool] = mapped_column(Boolean, default=False)
+    force_student_logout: Mapped[bool] = mapped_column(Boolean, default=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -40,6 +45,7 @@ class AssessmentSession(Base):
     events: Mapped[list["TimelineEvent"]] = relationship(back_populates="session")
     grades: Mapped[list["SubjectiveGrade"]] = relationship(back_populates="session")
     notes: Mapped[list["TeacherNote"]] = relationship(back_populates="session")
+    videos: Mapped[list["StudentVideoRecord"]] = relationship(back_populates="session")
     student: Mapped[Optional["Student"]] = relationship(back_populates="sessions")
 
 
@@ -73,6 +79,8 @@ class AssessmentItem(Base):
     scoring_mode: Mapped[str] = mapped_column(String(32), default="teacher_rubric")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_example: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_student_timer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -140,3 +148,19 @@ class TeacherNote(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     session: Mapped[AssessmentSession] = relationship(back_populates="notes")
+
+
+class StudentVideoRecord(Base):
+    __tablename__ = "student_video_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    session_id: Mapped[str] = mapped_column(ForeignKey("assessment_sessions.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer, index=True)
+    question_id: Mapped[str] = mapped_column(String(64), index=True)
+    file_path: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(120), default="video/webm")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    session: Mapped[AssessmentSession] = relationship(back_populates="videos")

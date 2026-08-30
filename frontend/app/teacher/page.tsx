@@ -14,9 +14,14 @@ import {
   EyeOff,
   LogOut,
   Maximize2,
+  Minus,
+  Play,
+  Plus,
   Radio,
   Save,
-  ShieldCheck,
+  Smile,
+  Square,
+  Timer,
   UserPlus,
   X
 } from "lucide-react";
@@ -24,9 +29,13 @@ import {
 import { CameraPositionCard } from "@/components/CameraPositionCard";
 import { StudentStimulus } from "@/components/StudentStimulus";
 import {
+  apiBase,
+  fetchGradedQuestionIds,
+  fetchQuestionScores,
   fetchSession,
   fetchTimeline,
   finishSession,
+  forceStudentLogout,
   formatExpiry,
   generateStudentToken,
   isJwtExpired,
@@ -48,6 +57,7 @@ import {
   type AssessmentItem
 } from "@/lib/assessmentContent";
 import { fetchStudents, type StudentListItem } from "@/lib/students";
+import { appThemes, getSavedTheme, saveTheme, type AppTheme } from "@/lib/theme";
 
 const fallbackItems: AssessmentItem[] = [
   {
@@ -63,6 +73,8 @@ const fallbackItems: AssessmentItem[] = [
     scoring_mode: "teacher_rubric",
     sort_order: 1,
     is_active: true,
+    is_example: true,
+    show_student_timer: false,
     created_at: ""
   }
 ];
@@ -99,6 +111,8 @@ export default function TeacherPage() {
   const [students, setStudents] = useState<StudentListItem[]>([]);
   const [studentToken, setStudentToken] = useState<StudentTokenResponse | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [gradedQuestionIdsFromDb, setGradedQuestionIdsFromDb] = useState<string[]>([]);
+  const [scoreDraftsFromDb, setScoreDraftsFromDb] = useState<Record<string, ScoreDraft>>({});
   const [assessmentItems, setAssessmentItems] = useState<AssessmentItem[]>(fallbackItems);
   const [activeCategory, setActiveCategory] = useState<AssessmentCategory>("phonological_awareness");
   const [selectedQuestion, setSelectedQuestion] = useState(0);
@@ -119,18 +133,32 @@ export default function TeacherPage() {
   const [saveState, setSaveState] = useState("Belum disimpan");
   const [pulseKey, setPulseKey] = useState(0);
   const [feelingPulseKey, setFeelingPulseKey] = useState(0);
+  const [teacherTimerMs, setTeacherTimerMs] = useState(0);
+  const [teacherTimerRunning, setTeacherTimerRunning] = useState(false);
+  const [theme, setTheme] = useState<AppTheme>("mit");
   const lastRenderedSignature = useRef("");
   const lastFeelingSignature = useRef("");
   const noteSaveTimer = useRef<number | null>(null);
+  const teacherTimerBaseMs = useRef(0);
+  const teacherTimerStartedAt = useRef<number | null>(null);
+  const teacherTimerKey = useRef("");
+  const stoppedTeacherTimerKeys = useRef<Set<string>>(new Set());
+  const recordedTeacherTimerKeys = useRef<Set<string>>(new Set());
+  const categorySelectionDirty = useRef(false);
+  const activeCategoryRef = useRef<AssessmentCategory>("phonological_awareness");
 
   async function refresh() {
     if (!teacherJwt || !session) return;
-    const [state, events] = await Promise.all([
+    const [state, events, gradedStatus, scoreStatus] = await Promise.all([
       fetchSession(session.code, teacherJwt),
-      fetchTimeline(session.code, teacherJwt).catch(() => [])
+      fetchTimeline(session.code, teacherJwt).catch(() => []),
+      fetchGradedQuestionIds(session.code, teacherJwt).catch(() => ({ question_ids: [] })),
+      fetchQuestionScores(session.code, teacherJwt).catch(() => ({ scores: {} }))
     ]);
     setSession(state);
     setTimeline(events);
+    setGradedQuestionIdsFromDb(gradedStatus.question_ids);
+    setScoreDraftsFromDb(scoreStatus.scores);
     const renderedEvent = events.find(
       (event) => event.event_type === "QUESTION_RENDERED" && event.sequence === state.active_sequence
     );
@@ -150,15 +178,19 @@ export default function TeacherPage() {
       lastFeelingSignature.current = feelingSignature;
     }
     const stateCategory = state.active_category as AssessmentCategory;
-    if (assessmentCategories.some((item) => item.value === stateCategory)) {
+    if (assessmentCategories.some((item) => item.value === stateCategory) && !categorySelectionDirty.current) {
       setActiveCategory(stateCategory);
       const categoryItems = assessmentItems.filter((item) => item.category === stateCategory && item.is_active);
       const index = categoryItems.findIndex((item) => item.item_code === state.active_question_id);
       if (index >= 0) setSelectedQuestion(index);
     }
+    if (stateCategory === activeCategoryRef.current) {
+      categorySelectionDirty.current = false;
+    }
   }
 
   useEffect(() => {
+    setTheme(getSavedTheme());
     const savedJwt = window.localStorage.getItem("teacher-jwt") ?? "";
     const savedSessionCode = window.localStorage.getItem("teacher-session-code") ?? "";
     if (savedJwt) setTeacherJwt(savedJwt);
@@ -208,6 +240,10 @@ export default function TeacherPage() {
   }, [noteDrafts]);
 
   useEffect(() => {
+    activeCategoryRef.current = activeCategory;
+  }, [activeCategory]);
+
+  useEffect(() => {
     return () => {
       if (noteSaveTimer.current) window.clearTimeout(noteSaveTimer.current);
     };
@@ -215,13 +251,13 @@ export default function TeacherPage() {
 
   useEffect(() => {
     if (!session) return;
-    const draft = scoreDrafts[session.active_question_id] ?? emptyScore;
+    const draft = scoreDraftsFromDb[session.active_question_id] ?? emptyScore;
     setFluency(draft.fluency);
     setAccuracy(draft.accuracy);
     setConfidence(draft.confidence);
     setNote(noteDrafts[session.active_question_id] ?? "");
-    setSaveState(scoreDrafts[session.active_question_id] ? "Draft nilai dimuat" : "Nilai awal 0");
-  }, [session?.active_question_id]);
+    setSaveState(scoreDraftsFromDb[session.active_question_id] ? "Nilai dari database dimuat" : "Nilai awal 0");
+  }, [session?.active_question_id, scoreDraftsFromDb]);
 
   const total = useMemo(() => fluency + accuracy + confidence, [fluency, accuracy, confidence]);
   const categoryItems = useMemo(() => {
@@ -232,19 +268,194 @@ export default function TeacherPage() {
   const assessmentLocked = Boolean(session?.started_at && !session.assessment_finished);
   const controlsDisabled = !session || Boolean(session.assessment_finished);
   const questionControlsDisabled = controlsDisabled || !hasActiveCategoryQuestion;
+  const categoryPending = Boolean(session && session.active_category !== activeCategory);
+  const sessionWaiting = !session || session.active_category === "waiting" || session.active_question_id === "WAITING";
   const activeRenderedAck = timeline.find(
     (event) => event.event_type === "QUESTION_RENDERED" && event.sequence === session?.active_sequence
   );
   const activeFeelingAck = timeline.find(
     (event) => event.event_type === "STUDENT_FEELING_SELECTED" && event.sequence === session?.active_sequence
   );
-  const activeFeeling = activeFeelingAck ? parseTimelinePayload(activeFeelingAck.payload).feeling : "";
+  const activeFeelingPayload = activeFeelingAck ? parseTimelinePayload(activeFeelingAck.payload) : {};
+  const activeFeeling = typeof activeFeelingPayload.feeling === "string" ? activeFeelingPayload.feeling : "";
+  const activeRecordingStarted = timeline.find(
+    (event) => event.event_type === "STUDENT_RECORDING_STARTED" && event.sequence === session?.active_sequence
+  );
+  const activeRecordingSaved = timeline.find(
+    (event) => event.event_type === "STUDENT_RECORDING_SAVED" && event.sequence === session?.active_sequence
+  );
+  const activeCameraPreview =
+    timeline.find((event) => event.event_type === "STUDENT_CAMERA_PREVIEW" && event.sequence === session?.active_sequence) ??
+    timeline.find((event) => event.event_type === "STUDENT_CAMERA_PREVIEW");
+  const activeCameraPayload = activeCameraPreview ? parseTimelinePayload(activeCameraPreview.payload) : {};
+  const latestRecordingSaved =
+    activeRecordingSaved ?? timeline.find((event) => event.event_type === "STUDENT_RECORDING_SAVED");
+  const activeRecordingPayload = latestRecordingSaved ? parseTimelinePayload(latestRecordingSaved.payload) : {};
+  const activeRecordingSource =
+    typeof activeRecordingPayload.source === "string" ? activeRecordingPayload.source : "";
+  const activeCameraSource =
+    typeof activeCameraPayload.source === "string" ? activeCameraPayload.source : "";
+  const cameraPreviewSource = activeCameraSource || activeRecordingSource;
+  const recordingStatus = session?.assessment_finished
+    ? "Sesi selesai"
+    : sessionWaiting
+      ? "Menunggu soal"
+      : activeCameraPreview
+        ? "Preview live diterima"
+        : activeRecordingStarted && !activeRecordingSaved
+        ? "Merekam 25fps"
+        : latestRecordingSaved
+          ? "Rekaman tersimpan"
+          : "Menunggu kamera siswa";
+  const recordingDuration =
+    typeof activeRecordingPayload.duration_ms === "number"
+      ? formatTimerMs(activeRecordingPayload.duration_ms)
+      : typeof activeRecordingPayload.duration_ms === "string"
+        ? formatTimerMs(Number(activeRecordingPayload.duration_ms))
+        : "-";
+  const gradedQuestionIds = useMemo(() => {
+    return new Set(gradedQuestionIdsFromDb);
+  }, [gradedQuestionIdsFromDb]);
+  const teacherTimerControl = isTeacherTimedMode(activeItem.scoring_mode) ? (
+    <div className={teacherTimerRunning ? "teacher-timer running" : "teacher-timer"}>
+      <span>
+        <Timer size={15} />
+        Timer
+      </span>
+      <strong>{formatTimerMs(teacherTimerMs)}</strong>
+      <input
+        aria-label="Koreksi timer dalam detik"
+        disabled={controlsDisabled}
+        min="0"
+        type="number"
+        value={Math.round(teacherTimerMs / 1000)}
+        onChange={(event) => setTeacherTimerValue(Number(event.target.value) * 1000)}
+      />
+      <div className="timer-actions">
+        <button
+          disabled={controlsDisabled}
+          onClick={() => setTeacherTimerValue(currentTeacherTimerMs() - 1000)}
+          title="Kurangi 1 detik"
+          aria-label="Kurangi 1 detik"
+          type="button"
+        >
+          <Minus size={15} />
+        </button>
+        <button
+          disabled={controlsDisabled || stoppedTeacherTimerKeys.current.has(session ? getTeacherTimerKey(session) : "")}
+          onClick={() => stopTeacherTimer("manual_stop")}
+          title="Stop timer"
+          aria-label="Stop timer"
+          type="button"
+        >
+          <Square size={15} />
+        </button>
+        <button
+          disabled={controlsDisabled}
+          onClick={() => setTeacherTimerValue(currentTeacherTimerMs() + 1000)}
+          title="Tambah 1 detik"
+          aria-label="Tambah 1 detik"
+          type="button"
+        >
+          <Plus size={15} />
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  useEffect(() => {
+    if (!teacherTimerRunning || teacherTimerStartedAt.current === null) return;
+
+    const interval = window.setInterval(() => {
+      if (teacherTimerStartedAt.current === null) return;
+      setTeacherTimerMs(teacherTimerBaseMs.current + performance.now() - teacherTimerStartedAt.current);
+    }, 200);
+
+    return () => window.clearInterval(interval);
+  }, [teacherTimerRunning]);
+
+  useEffect(() => {
+    if (!session || !isTeacherTimedMode(session.active_scoring_mode) || session.assessment_finished) {
+      resetTeacherTimer("");
+      return;
+    }
+
+    const key = getTeacherTimerKey(session);
+    if (teacherTimerKey.current !== key) {
+      resetTeacherTimer(key);
+    }
+    if (!activeRenderedAck || stoppedTeacherTimerKeys.current.has(key)) return;
+
+    startTeacherTimer(key);
+  }, [
+    session?.active_question_id,
+    session?.active_scoring_mode,
+    session?.active_sequence,
+    session?.assessment_finished,
+    activeRenderedAck?.t_ms
+  ]);
 
   useEffect(() => {
     if (selectedQuestion >= categoryItems.length) {
       setSelectedQuestion(0);
     }
   }, [categoryItems.length, selectedQuestion]);
+
+  function resetTeacherTimer(key: string) {
+    teacherTimerKey.current = key;
+    teacherTimerBaseMs.current = 0;
+    teacherTimerStartedAt.current = null;
+    setTeacherTimerMs(0);
+    setTeacherTimerRunning(false);
+  }
+
+  function startTeacherTimer(key: string) {
+    if (teacherTimerKey.current === key && teacherTimerRunning) return;
+    teacherTimerKey.current = key;
+    teacherTimerBaseMs.current = 0;
+    teacherTimerStartedAt.current = performance.now();
+    setTeacherTimerMs(0);
+    setTeacherTimerRunning(true);
+  }
+
+  function currentTeacherTimerMs() {
+    if (!teacherTimerRunning || teacherTimerStartedAt.current === null) return teacherTimerMs;
+    return teacherTimerBaseMs.current + performance.now() - teacherTimerStartedAt.current;
+  }
+
+  function setTeacherTimerValue(nextMs: number) {
+    const bounded = Math.max(0, nextMs);
+    teacherTimerBaseMs.current = bounded;
+    if (teacherTimerRunning) {
+      teacherTimerStartedAt.current = performance.now();
+    }
+    setTeacherTimerMs(bounded);
+  }
+
+  async function recordTeacherResponseTime(source: string, durationMs: number, force = false) {
+    if (!session || !teacherJwt || !isTeacherTimedMode(session.active_scoring_mode)) return;
+    const key = getTeacherTimerKey(session);
+    if (!force && recordedTeacherTimerKeys.current.has(key)) return;
+    recordedTeacherTimerKeys.current.add(key);
+    await sendAcknowledgment(session.code, teacherJwt, session.active_sequence, "TEACHER_RESPONSE_TIME", {
+      questionId: session.active_question_id,
+      duration_ms: Math.max(0, Math.round(durationMs)),
+      source
+    });
+  }
+
+  function stopTeacherTimer(source: string) {
+    if (!session || !isTeacherTimedMode(session.active_scoring_mode)) return teacherTimerMs;
+    const key = getTeacherTimerKey(session);
+    const finalMs = currentTeacherTimerMs();
+    teacherTimerBaseMs.current = finalMs;
+    teacherTimerStartedAt.current = null;
+    stoppedTeacherTimerKeys.current.add(key);
+    setTeacherTimerMs(finalMs);
+    setTeacherTimerRunning(false);
+    recordTeacherResponseTime(source, finalMs).catch(() => undefined);
+    return finalMs;
+  }
 
   async function persistAssessment(score: ScoreDraft, noteText: string, sequence?: number) {
     if (!session || !teacherJwt || session.assessment_finished) return;
@@ -263,6 +474,7 @@ export default function TeacherPage() {
 
   function recordScoreChange(field: keyof ScoreDraft, value: number) {
     if (!session || !teacherJwt || session.assessment_finished) return;
+    stopTeacherTimer("slider");
 
     const nextScore = {
       fluency,
@@ -281,7 +493,13 @@ export default function TeacherPage() {
     if (field === "confidence") setConfidence(value);
     setSaveState(`Menyimpan ${session.active_question_id}...`);
     saveGrade(session.code, teacherJwt, session.active_sequence, nextScore.fluency, nextScore.accuracy, nextScore.confidence)
-      .then(() => setSaveState(`Skor ${session.active_question_id} tersimpan`))
+      .then(() => {
+        setScoreDraftsFromDb((drafts) => ({
+          ...drafts,
+          [session.active_question_id]: nextScore
+        }));
+        setSaveState(`Skor ${session.active_question_id} tersimpan`);
+      })
       .catch(() => setSaveState(`Skor ${session.active_question_id} belum tersimpan`));
   }
 
@@ -306,47 +524,46 @@ export default function TeacherPage() {
     recordNoteChange(nextNote);
   }
 
-  async function handleCategoryChange(value: AssessmentCategory) {
+  function handleCategoryChange(value: AssessmentCategory) {
+    categorySelectionDirty.current = true;
+    activeCategoryRef.current = value;
     setActiveCategory(value);
     setSelectedQuestion(0);
-    if (!session || !teacherJwt) return;
-    const firstItem = assessmentItems.find((item) => item.category === value && item.is_active);
-    if (!firstItem) return;
-    await persistAssessment({ fluency, accuracy, confidence }, note, session.active_sequence);
-    setSession(
-      await navigateQuestion(session.code, teacherJwt, firstItem.item_code, itemDisplayText(firstItem), {
-        instruction_text: firstItem.instruction_text,
-        category: firstItem.category,
-        scoring_mode: firstItem.scoring_mode,
-        options: firstItem.options,
-        correct_answer: firstItem.correct_answer
-      })
-    );
-    await refresh();
   }
 
-  async function goToQuestion(index: number) {
-    if (!session || !teacherJwt) return;
+  async function showSelectedQuestion(target = activeItem) {
+    if (!session || !teacherJwt || !target || target.item_code === "WAITING") return;
     await persistAssessment({ fluency, accuracy, confidence }, note, session.active_sequence);
-    if (categoryItems.length === 0) return;
-    const bounded = Math.max(0, Math.min(index, categoryItems.length - 1));
-    const target = categoryItems[bounded];
-    setSelectedQuestion(bounded);
     setSession(
       await navigateQuestion(session.code, teacherJwt, target.item_code, itemDisplayText(target), {
         instruction_text: target.instruction_text,
         category: target.category,
         scoring_mode: target.scoring_mode,
         options: target.options,
-        correct_answer: target.correct_answer
+        correct_answer: target.correct_answer,
+        is_example: target.is_example,
+        show_student_timer: target.show_student_timer
       })
     );
+    categorySelectionDirty.current = false;
     await refresh();
+  }
+
+  async function goToQuestion(index: number) {
+    if (categoryItems.length === 0) return;
+    const bounded = Math.max(0, Math.min(index, categoryItems.length - 1));
+    const target = categoryItems[bounded];
+    setSelectedQuestion(bounded);
+    if (sessionWaiting || categoryPending) return;
+    await showSelectedQuestion(target);
   }
 
   async function handleSaveAssessment() {
     if (!session || !teacherJwt) return;
     setSaveState("Menyimpan...");
+    if (isTeacherTimedMode(session.active_scoring_mode)) {
+      await recordTeacherResponseTime("manual_correction", teacherTimerMs, true);
+    }
     if (session.active_scoring_mode === "teacher_rubric") {
       await saveGrade(session.code, teacherJwt, session.active_sequence, fluency, accuracy, confidence);
     }
@@ -370,6 +587,9 @@ export default function TeacherPage() {
 
   async function recordBinaryScore(correct: boolean) {
     if (!session || !teacherJwt || session.assessment_finished) return;
+    const key = getTeacherTimerKey(session);
+    const timerAlreadyRecorded = recordedTeacherTimerKeys.current.has(key);
+    const finalMs = stopTeacherTimer("binary_score");
     const score = correct ? 10 : 0;
     setFluency(score);
     setAccuracy(score);
@@ -380,6 +600,13 @@ export default function TeacherPage() {
     }));
     setSaveState(correct ? "Jawaban benar tersimpan" : "Jawaban salah tersimpan");
     await saveGrade(session.code, teacherJwt, session.active_sequence, score, score, score);
+    setScoreDraftsFromDb((drafts) => ({
+      ...drafts,
+      [session.active_question_id]: { fluency: score, accuracy: score, confidence: score }
+    }));
+    if (timerAlreadyRecorded) {
+      await recordTeacherResponseTime("binary_score_correction", finalMs, true);
+    }
   }
 
   async function recordWritingUpload(fileName: string) {
@@ -412,13 +639,23 @@ export default function TeacherPage() {
 
   async function handleTeacherLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await submitTeacherLogin();
+  }
+
+  async function submitTeacherLogin() {
     setAuthError("");
     setAuthLoading(true);
     try {
       const response = await teacherLogin(username, password);
       window.localStorage.setItem("teacher-jwt", response.access_token);
+      window.localStorage.removeItem("teacher-session-code");
       setTeacherJwt(response.access_token);
+      setSession(null);
+      setStudentToken(null);
+      setTimeline([]);
+      setAuthError("");
     } catch (error) {
+      console.error("Teacher login failed", error);
       setAuthError(error instanceof Error ? error.message : "Login guru gagal");
     } finally {
       setAuthLoading(false);
@@ -427,16 +664,29 @@ export default function TeacherPage() {
 
   async function handleGenerateStudentToken() {
     if (!teacherJwt) return;
+    const cameraEnabled = window.confirm("Aktifkan kamera dan perekaman untuk token siswa ini?");
     const selectedStudent = students.find((student) => student.id === studentId);
     const response = await generateStudentToken(
       teacherJwt,
       selectedStudent?.name ?? studentName,
-      selectedStudent?.id
+      selectedStudent?.id,
+      cameraEnabled
     );
     window.localStorage.setItem("teacher-session-code", response.session.code);
     setStudentToken(response);
     setSession(response.session);
     setTimeline([]);
+    setGradedQuestionIdsFromDb([]);
+    setScoreDraftsFromDb({});
+  }
+
+  async function handleForceStudentLogout() {
+    if (!session || !teacherJwt) return;
+    const confirmed = window.confirm(`Logout siswa dari token/session ${session.code}?`);
+    if (!confirmed) return;
+    setSession(await forceStudentLogout(session.code, teacherJwt));
+    setSaveState("Siswa diminta logout");
+    await refresh();
   }
 
   async function toggleStudentSidePanel() {
@@ -461,13 +711,36 @@ export default function TeacherPage() {
     }
   }
 
+  async function requestStudentCamera() {
+    if (!session || !teacherJwt || !session.camera_enabled) return;
+    try {
+      setSession(await updateUiControls(session.code, teacherJwt, { request_student_camera: true }));
+      setSaveState("Permintaan izin kamera dikirim");
+    } catch (error) {
+      if (error instanceof Error && error.message === "SESSION_EXPIRED") {
+        expireTeacherSession();
+      }
+    }
+  }
+
+  async function handleThemeChange(nextTheme: AppTheme) {
+    setTheme(nextTheme);
+    saveTheme(nextTheme);
+    if (!session || !teacherJwt) return;
+    try {
+      setSession(await updateUiControls(session.code, teacherJwt, { theme_name: nextTheme }));
+    } catch {
+      setSaveState("Tema lokal tersimpan, belum tersinkron ke siswa");
+    }
+  }
+
   if (!teacherJwt) {
     return (
       <main className="auth-shell">
         <form className="auth-panel" onSubmit={handleTeacherLogin}>
           <div className="panel-title">
-            <ShieldCheck size={20} />
-            <h1>Login Guru</h1>
+            <Smile size={20} />
+            <h1>Login</h1>
           </div>
           <label>
             <span>Username</span>
@@ -483,7 +756,16 @@ export default function TeacherPage() {
             />
           </label>
           {authError ? <p className="error-text">{authError}</p> : null}
-          <button className="primary-button full" disabled={authLoading} type="submit">
+          <p className="save-state">API: {apiBase}</p>
+          <button
+            className="primary-button full"
+            disabled={authLoading}
+            onClick={(event) => {
+              event.preventDefault();
+              submitTeacherLogin();
+            }}
+            type="submit"
+          >
             {authLoading ? "Memproses..." : "Masuk"}
           </button>
         </form>
@@ -492,7 +774,7 @@ export default function TeacherPage() {
   }
 
   return (
-    <main className="teacher-shell">
+    <main className={`teacher-shell theme-${theme}`}>
       <header className="teacher-topbar">
         <div>
           <p className="eyebrow">UI Guru</p>
@@ -510,6 +792,23 @@ export default function TeacherPage() {
         <div className="live-pill">
           Exp {formatExpiry(teacherJwt)}
         </div>
+        <div className="live-pill">
+          API {apiBase.replace(/^https?:\/\//, "")}
+        </div>
+        <label className="theme-picker" title="Theme">
+          <select
+            value={theme}
+            onChange={(event) => {
+              handleThemeChange(event.target.value as AppTheme);
+            }}
+          >
+            {appThemes.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <Link className="nav-button" href="/teacher/students/">
           Daftar siswa
         </Link>
@@ -598,24 +897,27 @@ export default function TeacherPage() {
                   )}
                 </select>
               </label>
-              {assessmentLocked ? (
-                <span className="detail-link disabled-link">Siswa terkunci</span>
-              ) : (
-                <Link className="detail-link compact-icon-link" href="/teacher/students/new/" title="Tambah siswa baru" aria-label="Tambah siswa baru">
+              <div className="token-actions">
+                {assessmentLocked ? (
+                  <span className="detail-link disabled-link">Siswa terkunci</span>
+                ) : (
+                  <Link className="detail-link" href="/teacher/students/new/" title="Tambah siswa baru" aria-label="Tambah siswa baru">
+                    <UserPlus size={17} />
+                    Siswa
+                  </Link>
+                )}
+                <button
+                  className="primary-button"
+                  disabled={students.length === 0 || assessmentLocked}
+                  onClick={handleGenerateStudentToken}
+                  title="Generate token siswa"
+                  aria-label="Generate token siswa"
+                  type="button"
+                >
                   <UserPlus size={17} />
-                </Link>
-              )}
-              <button
-                className="primary-button full"
-                disabled={students.length === 0 || assessmentLocked}
-                onClick={handleGenerateStudentToken}
-                title="Generate token siswa"
-                aria-label="Generate token siswa"
-                type="button"
-              >
-                <UserPlus size={17} />
-                Token
-              </button>
+                  Token
+                </button>
+              </div>
               {studentToken ? (
                 <div className="student-token">
                   <span>Kode token siswa</span>
@@ -645,19 +947,33 @@ export default function TeacherPage() {
             <div className="question-nav" aria-label="Navigasi soal kategori aktif">
               {categoryItems.map((item, index) => (
                 <button
-                  className={index === selectedQuestion ? "question-nav-button active" : "question-nav-button"}
+                  className={[
+                    "question-nav-button",
+                    index === selectedQuestion ? "active" : "",
+                    gradedQuestionIds.has(item.item_code) ? "graded" : ""
+                  ].filter(Boolean).join(" ")}
                   disabled={questionControlsDisabled}
                   key={item.id}
                   onClick={() => goToQuestion(index)}
                   title={`${item.item_code} - ${item.title}`}
                   type="button"
                 >
-                  {index + 1}
+                  {item.is_example ? "C" : index + 1}
                 </button>
               ))}
               {categoryItems.length === 0 ? <span className="muted">Tidak ada soal aktif pada kategori ini.</span> : null}
             </div>
-            <div className="button-row">
+            <div className="teacher-control-row">
+              <button
+                className="primary-button"
+                disabled={questionControlsDisabled}
+                onClick={() => showSelectedQuestion()}
+                title={sessionWaiting || categoryPending ? "Mulai tampilkan soal ke siswa" : "Tampilkan ulang soal terpilih"}
+                aria-label={sessionWaiting || categoryPending ? "Mulai tampilkan soal ke siswa" : "Tampilkan ulang soal terpilih"}
+                type="button"
+              >
+                <Play size={17} />
+              </button>
               <button
                 disabled={questionControlsDisabled}
                 onClick={() => goToQuestion(selectedQuestion - 1)}
@@ -677,27 +993,43 @@ export default function TeacherPage() {
               >
                 <ArrowRight size={17} />
               </button>
+              <button
+                disabled={controlsDisabled}
+                onClick={toggleStudentSidePanel}
+                title={session?.hide_student_side ? "Tampilkan panel siswa" : "Sembunyikan preview/status siswa"}
+                aria-label={session?.hide_student_side ? "Tampilkan panel siswa" : "Sembunyikan preview/status siswa"}
+                type="button"
+              >
+                {session?.hide_student_side ? <Eye size={17} /> : <EyeOff size={17} />}
+              </button>
+              <button
+                disabled={controlsDisabled || Boolean(session?.fullscreen_active)}
+                onClick={requestStudentFullscreen}
+                title={session?.fullscreen_active ? "Siswa sudah fullscreen" : "Minta fullscreen siswa"}
+                aria-label={session?.fullscreen_active ? "Siswa sudah fullscreen" : "Minta fullscreen siswa"}
+                type="button"
+              >
+                <Maximize2 size={17} />
+              </button>
+              <button
+                disabled={controlsDisabled || !session?.camera_enabled}
+                onClick={requestStudentCamera}
+                title={session?.camera_enabled ? "Minta siswa membuka izin kamera" : "Kamera tidak diaktifkan pada token ini"}
+                aria-label={session?.camera_enabled ? "Minta siswa membuka izin kamera" : "Kamera tidak diaktifkan pada token ini"}
+                type="button"
+              >
+                <Camera size={17} />
+              </button>
+              <button
+                disabled={!session || Boolean(session.assessment_finished)}
+                onClick={handleForceStudentLogout}
+                title="Logout siswa dari token aktif"
+                aria-label="Logout siswa dari token aktif"
+                type="button"
+              >
+                <LogOut size={17} />
+              </button>
             </div>
-            <button
-              className="full"
-              disabled={controlsDisabled}
-              onClick={toggleStudentSidePanel}
-              title={session?.hide_student_side ? "Tampilkan panel siswa" : "Sembunyikan preview/status siswa"}
-              aria-label={session?.hide_student_side ? "Tampilkan panel siswa" : "Sembunyikan preview/status siswa"}
-              type="button"
-            >
-              {session?.hide_student_side ? <Eye size={17} /> : <EyeOff size={17} />}
-            </button>
-            <button
-              className="full"
-              disabled={controlsDisabled || Boolean(session?.fullscreen_active)}
-              onClick={requestStudentFullscreen}
-              title={session?.fullscreen_active ? "Siswa sudah fullscreen" : "Minta fullscreen siswa"}
-              aria-label={session?.fullscreen_active ? "Siswa sudah fullscreen" : "Minta fullscreen siswa"}
-              type="button"
-            >
-              <Maximize2 size={17} />
-            </button>
           </section>
 
           <section className="panel scoring-panel">
@@ -708,6 +1040,7 @@ export default function TeacherPage() {
             {!hasActiveCategoryQuestion ? <p className="muted">Aktifkan minimal satu soal pada kategori ini.</p> : null}
             {hasActiveCategoryQuestion && activeItem.scoring_mode === "teacher_rubric" ? (
               <>
+                {teacherTimerControl}
                 <ScoreInput
                   label="Kelancaran"
                   disabled={controlsDisabled}
@@ -733,27 +1066,30 @@ export default function TeacherPage() {
               </>
             ) : null}
             {hasActiveCategoryQuestion && activeItem.scoring_mode === "binary" ? (
-              <div className="button-row">
-                <button
-                  disabled={controlsDisabled}
-                  onClick={() => recordBinaryScore(false)}
-                  title="Salah"
-                  aria-label="Salah"
-                  type="button"
-                >
-                  <X size={17} />
-                </button>
-                <button
-                  className="primary-button"
-                  disabled={controlsDisabled}
-                  onClick={() => recordBinaryScore(true)}
-                  title="Benar"
-                  aria-label="Benar"
-                  type="button"
-                >
-                  <Check size={17} />
-                </button>
-              </div>
+              <>
+                {teacherTimerControl}
+                <div className="button-row">
+                  <button
+                    disabled={controlsDisabled}
+                    onClick={() => recordBinaryScore(false)}
+                    title="Salah"
+                    aria-label="Salah"
+                    type="button"
+                  >
+                    <X size={17} />
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={controlsDisabled}
+                    onClick={() => recordBinaryScore(true)}
+                    title="Benar"
+                    aria-label="Benar"
+                    type="button"
+                  >
+                    <Check size={17} />
+                  </button>
+                </div>
+              </>
             ) : null}
             {hasActiveCategoryQuestion && activeItem.scoring_mode === "system" ? (
               <div className="system-score-box">
@@ -804,53 +1140,70 @@ export default function TeacherPage() {
           </section>
         </aside>
 
-        <section className="panel camera-panel">
-          <div className="panel-title">
-            <Camera size={18} />
-            <h2>Preview kamera dan posisi</h2>
-          </div>
-          <div className="camera-teacher-grid">
-            <CameraPositionCard compact />
-            <div className="camera-metrics">
-              <div className="metric-row">
-                <span>Recording</span>
-                <strong>Standby</strong>
-              </div>
-              <div className="metric-row">
-                <span>FPS target</span>
-                <strong>90</strong>
-              </div>
-              <div className="metric-row">
-                <span>Face quality</span>
-                <strong>Valid</strong>
-              </div>
-              <div className="metric-row">
-                <span>ML</span>
-                <strong>Belakangan</strong>
+        <div className="teacher-bottom-grid">
+          <section className="panel camera-panel">
+            <div className="panel-title">
+              <Camera size={18} />
+              <h2>Preview kamera dan posisi</h2>
+            </div>
+            <div className="camera-teacher-grid">
+              {cameraPreviewSource ? (
+                <section className="camera-card compact live-camera-card teacher-recording-preview">
+                  <div className="camera-frame">
+                    {activeCameraSource ? (
+                      <img className="camera-video-preview" alt="Preview kamera siswa" src={mediaUrl(activeCameraSource)} />
+                    ) : (
+                      <video className="camera-video-preview" controls muted playsInline preload="metadata" src={mediaUrl(activeRecordingSource)} />
+                    )}
+                    <span className="camera-badge">
+                      <Camera size={15} /> {activeCameraSource ? "Live" : "Rekaman"}
+                    </span>
+                  </div>
+                </section>
+              ) : (
+                <CameraPositionCard compact />
+              )}
+              <div className="camera-metrics">
+                <div className="metric-row">
+                  <span>Recording</span>
+                  <strong>{session?.camera_enabled ? recordingStatus : "Kamera nonaktif"}</strong>
+                </div>
+                <div className="metric-row">
+                  <span>FPS target</span>
+                  <strong>25</strong>
+                </div>
+                <div className="metric-row">
+                  <span>Durasi</span>
+                  <strong>{recordingDuration}</strong>
+                </div>
+                <div className="metric-row">
+                  <span>File</span>
+                  <strong>{activeRecordingSource ? "Video ada" : activeCameraSource ? "Preview ada" : "-"}</strong>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="panel timeline-panel">
-          <div className="panel-title">
-            <Radio size={18} />
-            <h2>Timeline sesi</h2>
-          </div>
-          <div className="timeline-list">
-            {timeline.length === 0 ? (
-              <p className="muted">Belum ada event.</p>
-            ) : (
-              timeline.map((event, index) => (
-                <div className="timeline-item" key={`${event.event_type}-${event.t_ms}-${index}`}>
-                  <span>{event.event_type}</span>
-                  <strong>Seq {event.sequence}</strong>
-                  <em>{event.t_ms.toFixed(0)} ms</em>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+          <section className="panel timeline-panel">
+            <div className="panel-title">
+              <Radio size={18} />
+              <h2>Timeline sesi</h2>
+            </div>
+            <div className="timeline-list">
+              {timeline.length === 0 ? (
+                <p className="muted">Belum ada event.</p>
+              ) : (
+                timeline.map((event, index) => (
+                  <div className="timeline-item" key={`${event.event_type}-${event.t_ms}-${index}`}>
+                    <span>{event.event_type}</span>
+                    <strong>Seq {event.sequence}</strong>
+                    <em>{event.t_ms.toFixed(0)} ms</em>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
       </section>
     </main>
   );
@@ -885,14 +1238,36 @@ function ScoreInput({
 
 function parseTimelinePayload(payload: string) {
   try {
-    return JSON.parse(payload) as Record<string, string>;
+    return JSON.parse(payload) as Record<string, unknown>;
   } catch {
     return {};
   }
+}
+
+function mediaUrl(source: string) {
+  if (!source) return "";
+  if (source.startsWith("http")) return source;
+  return `${apiBase}${source}`;
 }
 
 function itemDisplayText(item: AssessmentItem) {
   const stimulus = item.stimulus.trim();
   if (!stimulus) return item.prompt;
   return `${item.prompt}\n${stimulus}`;
+}
+
+function getTeacherTimerKey(session: SessionState) {
+  return `${session.code}-${session.active_sequence}-${session.active_question_id}`;
+}
+
+function isTeacherTimedMode(scoringMode: string) {
+  return scoringMode === "teacher_rubric" || scoringMode === "binary";
+}
+
+function formatTimerMs(value: number) {
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  const tenths = Math.floor((Math.max(0, value) % 1000) / 100);
+  return `${minutes}:${seconds}.${tenths}`;
 }
