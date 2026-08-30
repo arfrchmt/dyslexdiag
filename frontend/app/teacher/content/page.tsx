@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Edit3, Layers3, Plus, Save, X } from "lucide-react";
 
@@ -148,10 +147,10 @@ export default function AssessmentContentPage() {
           <p className="eyebrow">UI Guru</p>
           <h1>Konten Asesmen</h1>
         </div>
-        <Link className="nav-button" href="/teacher/">
+        <a className="nav-button" href="/teacher/">
           <ArrowLeft size={16} />
           Kembali ke kontrol
-        </Link>
+        </a>
       </header>
 
       <section className="content-grid">

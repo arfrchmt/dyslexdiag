@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Download, FileText, FileVideo, Gauge, NotebookText, Printer, X } from "lucide-react";
 
@@ -154,10 +153,10 @@ export default function StudentDetailPage() {
           <p className="eyebrow">Detail siswa</p>
           <h1>{student?.name ?? "Memuat siswa"}</h1>
         </div>
-        <Link className="nav-button" href="/teacher/students/">
+        <a className="nav-button" href="/teacher/students/">
           <ArrowLeft size={16} />
           Daftar siswa
-        </Link>
+        </a>
       </header>
 
       {error ? <p className="error-text">{error}</p> : null}
@@ -301,11 +300,15 @@ export default function StudentDetailPage() {
                     {question.videos.length > 0 ? (
                       <button
                         className="question-video-thumb"
-                        onClick={() => setActiveVideo(question.videos[0])}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setActiveVideo(question.videos[0]);
+                        }}
                         title={`Buka video ${question.videos[0].label}`}
                         type="button"
                       >
-                        <video muted playsInline preload="metadata" src={mediaUrl(question.videos[0].source)} />
+                        <video muted playsInline preload="metadata" src={mediaUrl(question.videos[0].source)} tabIndex={-1} />
                         <span>Video</span>
                         <strong>{question.videos.length} file</strong>
                       </button>

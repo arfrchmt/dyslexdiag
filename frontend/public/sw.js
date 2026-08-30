@@ -1,4 +1,4 @@
-const CACHE_NAME = "dyslexdiag-static-v1";
+const CACHE_NAME = "dyslexdiag-static-v2";
 const APP_SHELL = ["/", "/teacher/", "/student/", "/manifest.json", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -19,23 +19,23 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.port === "8000" || event.request.method !== "GET") return;
+  if (url.port === "8000" || url.port === "8443" || event.request.method !== "GET") return;
+  if (url.pathname.startsWith("/_next/")) return;
 
   if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request).catch(() => caches.match("/teacher/")));
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then((cached) => cached ?? caches.match("/teacher/"))));
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (response.ok && url.origin === self.location.origin) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });

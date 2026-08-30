@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -809,12 +808,12 @@ export default function TeacherPage() {
             ))}
           </select>
         </label>
-        <Link className="nav-button" href="/teacher/students/">
+        <a className="nav-button" href="/teacher/students/">
           Daftar siswa
-        </Link>
-        <Link className="nav-button" href="/teacher/content/">
+        </a>
+        <a className="nav-button" href="/teacher/content/">
           Konten asesmen
-        </Link>
+        </a>
         <button className="nav-button" onClick={logoutTeacher} type="button">
           <LogOut size={16} />
           Logout
@@ -901,10 +900,10 @@ export default function TeacherPage() {
                 {assessmentLocked ? (
                   <span className="detail-link disabled-link">Siswa terkunci</span>
                 ) : (
-                  <Link className="detail-link" href="/teacher/students/new/" title="Tambah siswa baru" aria-label="Tambah siswa baru">
+                  <a className="detail-link" href="/teacher/students/new/" title="Tambah siswa baru" aria-label="Tambah siswa baru">
                     <UserPlus size={17} />
                     Siswa
-                  </Link>
+                  </a>
                 )}
                 <button
                   className="primary-button"

@@ -28,6 +28,9 @@ backend/media/
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
+frontend/.next*/
+frontend/.next-student/
+frontend/.next-teacher/
 frontend/out/
 frontend/.turbo/
 frontend/.vercel/

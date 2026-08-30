@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, useState } from "react";
 import { ArrowLeft, Save, UserPlus } from "lucide-react";
 
@@ -46,10 +45,10 @@ export default function NewStudentPage() {
           <p className="eyebrow">Data siswa</p>
           <h1>Tambah Siswa Baru</h1>
         </div>
-        <Link className="nav-button" href="/teacher/students/">
+        <a className="nav-button" href="/teacher/students/">
           <ArrowLeft size={16} />
           Daftar siswa
-        </Link>
+        </a>
       </header>
 
       <form className="panel student-form" onSubmit={handleSubmit}>

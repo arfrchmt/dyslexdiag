@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, ClipboardList, Plus, Users } from "lucide-react";
 
@@ -42,13 +41,13 @@ export default function TeacherStudentsPage() {
           <p className="eyebrow">UI Guru</p>
           <h1>Daftar Siswa</h1>
         </div>
-        <Link className="nav-button" href="/teacher/students/new/">
+        <a className="nav-button" href="/teacher/students/new/">
           <Plus size={16} />
           Tambah siswa
-        </Link>
-        <Link className="nav-button" href="/teacher/">
+        </a>
+        <a className="nav-button" href="/teacher/">
           Kembali ke kontrol
-        </Link>
+        </a>
       </header>
 
       <section className="panel">
@@ -74,10 +73,10 @@ export default function TeacherStudentsPage() {
               <span>-</span>
               <span>-</span>
               <span className="status-badge belum">Belum</span>
-              <Link className="detail-link" href="/teacher/students/new/">
+              <a className="detail-link" href="/teacher/students/new/">
                 <Plus size={16} />
                 Tambah
-              </Link>
+              </a>
             </div>
           ) : (
             students.map((student) => (
@@ -89,11 +88,11 @@ export default function TeacherStudentsPage() {
                   {student.total_score}/{student.max_score}
                 </span>
                 <span className={`status-badge ${student.status}`}>{statusLabel(student.status)}</span>
-                <Link className="detail-link" href={`/teacher/students/detail/?id=${student.id}`}>
+                <a className="detail-link" href={`/teacher/students/detail/?id=${student.id}`}>
                   <ClipboardList size={16} />
                   Detail
                   <ArrowRight size={16} />
-                </Link>
+                </a>
               </div>
             ))
           )}
