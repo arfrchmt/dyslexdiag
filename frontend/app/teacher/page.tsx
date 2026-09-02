@@ -277,6 +277,18 @@ export default function TeacherPage() {
   );
   const activeFeelingPayload = activeFeelingAck ? parseTimelinePayload(activeFeelingAck.payload) : {};
   const activeFeeling = typeof activeFeelingPayload.feeling === "string" ? activeFeelingPayload.feeling : "";
+  const activeChunkDraftAck = timeline.find(
+    (event) => event.event_type === "STUDENT_CHUNK_DRAFT" && event.sequence === session?.active_sequence
+  );
+  const activeChunkDraftPayload = activeChunkDraftAck ? parseTimelinePayload(activeChunkDraftAck.payload) : {};
+  const activeChunkDraftWords = Array.isArray(activeChunkDraftPayload.words)
+    ? activeChunkDraftPayload.words.filter((word): word is string => typeof word === "string")
+    : [];
+  const activeChunkDraftStatus =
+    typeof activeChunkDraftPayload.status === "string" ? activeChunkDraftPayload.status : "draft";
+  const activeChunkDraftAnswer =
+    typeof activeChunkDraftPayload.answer === "string" ? activeChunkDraftPayload.answer : activeChunkDraftWords.join(" ");
+  const activeChunkDraftComplete = activeChunkDraftPayload.complete === true;
   const activeRecordingStarted = timeline.find(
     (event) => event.event_type === "STUDENT_RECORDING_STARTED" && event.sequence === session?.active_sequence
   );
@@ -850,6 +862,24 @@ export default function TeacherPage() {
             ) : (
               <div className="stimulus preview">Memuat sesi...</div>
             )}
+            {session?.active_scoring_mode === "system" ? (
+              <div className={activeChunkDraftWords.length > 0 ? "teacher-chunk-preview active" : "teacher-chunk-preview"}>
+                <span>Preview jawaban siswa</span>
+                <div className="teacher-chunk-preview-row">
+                  {session.active_options.map((_, slotIndex) => (
+                    <strong key={`teacher-chunk-${slotIndex}`}>
+                      {activeChunkDraftWords[slotIndex] ?? ""}
+                    </strong>
+                  ))}
+                </div>
+                <em>
+                  {activeChunkDraftWords.length > 0
+                    ? `${activeChunkDraftComplete ? "Lengkap" : "Draft"} - ${activeChunkDraftAnswer || "-"}`
+                    : "Siswa belum memindahkan blok."}
+                  {activeChunkDraftStatus === "submitted" ? " - disimpan siswa" : ""}
+                </em>
+              </div>
+            ) : null}
             <div className="ack-grid">
               <span className="ack ok">Tablet aktif</span>
               <span className={activeRenderedAck ? "ack ok pulse-ack" : "ack warn"}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, Save, UserRound, Wifi } from "lucide-react";
+import { Camera, Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, RotateCcw, Save, UserRound, Wifi } from "lucide-react";
 
 import { StudentStimulus } from "@/components/StudentStimulus";
 import {
@@ -17,18 +17,17 @@ import {
 } from "@/lib/session";
 import { appThemes, getSavedTheme, saveTheme, type AppTheme } from "@/lib/theme";
 
-const feelingOptions = [
-  { value: "senang", icon: "🙂", label: "Senyum" },
-  { value: "netral", icon: "😐", label: "Netral" },
-  { value: "sedih", icon: "🙁", label: "Sedih" },
-  { value: "menangis", icon: "😢", label: "Menangis" },
-  { value: "pusing", icon: "😵", label: "Pusing" }
+const studentFeelingOptions = [
+  { value: "senang", icon: "\u{1F642}", label: "Senyum" },
+  { value: "menangis", icon: "\u{1F622}", label: "Menangis" }
 ];
 
 type WordBlock = {
   id: number;
   word: string;
 };
+
+type WordSlot = number | null;
 
 export default function StudentPage() {
   const [session, setSession] = useState<SessionState | null>(null);
@@ -46,8 +45,10 @@ export default function StudentPage() {
     return saved ? (JSON.parse(saved) as Record<string, string>) : {};
   });
   const [selectedFeeling, setSelectedFeeling] = useState("");
-  const [assembledWordIndexes, setAssembledWordIndexes] = useState<number[]>([]);
+  const [assembledWordIndexes, setAssembledWordIndexes] = useState<WordSlot[]>([]);
   const [shuffledWordBlocks, setShuffledWordBlocks] = useState<WordBlock[]>([]);
+  const [draggingWordIndex, setDraggingWordIndex] = useState<number | null>(null);
+  const [activeDropSlotIndex, setActiveDropSlotIndex] = useState<number | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [questionTimerMs, setQuestionTimerMs] = useState(0);
   const [clicks, setClicks] = useState(0);
@@ -62,6 +63,7 @@ export default function StudentPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingMetaRef = useRef<{ sequence: number; questionId: string; startedAt: number } | null>(null);
+  const recentPlacedWordRef = useRef<{ index: number; at: number } | null>(null);
   const questionDisplayed = Boolean(
     session &&
       !session.assessment_finished &&
@@ -250,9 +252,103 @@ export default function StudentPage() {
       saveTheme(session.theme_name);
     }
     setSelectedFeeling(feelingDrafts[session.active_question_id] ?? "");
-    setAssembledWordIndexes([]);
+    setAssembledWordIndexes(createEmptyWordSlots(session.active_options.length));
+    setActiveDropSlotIndex(null);
     setShuffledWordBlocks(getAnswerBlocksForQuestion(session));
   }, [session?.active_question_id, session?.active_options.join("\u0001"), session?.theme_name]);
+
+  useEffect(() => {
+    if (!session || session.active_scoring_mode !== "system" || session.active_options.length === 0) return;
+    let cleanup = false;
+
+    async function setupInteract() {
+      const interactModule = await import("interactjs");
+      const interact = interactModule.default;
+      if (cleanup) return;
+
+      interact(".word-block").draggable({
+        inertia: false,
+        autoScroll: true,
+        listeners: {
+          start(event) {
+            const target = event.target as HTMLElement;
+            if (target.classList.contains("used")) return;
+            const wordIndex = Number(target.dataset.wordIndex);
+            if (Number.isFinite(wordIndex)) setDraggingWordIndex(wordIndex);
+            target.classList.add("dragging");
+            target.dataset.dropped = "";
+          },
+          move(event) {
+            const target = event.target as HTMLElement;
+            if (target.classList.contains("used")) return;
+            const x = (Number(target.dataset.x) || 0) + event.dx;
+            const y = (Number(target.dataset.y) || 0) + event.dy;
+            target.style.transform = `translate(${x}px, ${y}px)`;
+            target.dataset.x = String(x);
+            target.dataset.y = String(y);
+          },
+          end(event) {
+            const target = event.target as HTMLElement;
+            target.classList.remove("dragging");
+            target.style.transform = "";
+            target.dataset.x = "0";
+            target.dataset.y = "0";
+            target.dataset.dropped = "";
+            setDraggingWordIndex(null);
+            setActiveDropSlotIndex(null);
+          }
+        }
+      });
+
+      interact(".answer-slot, .answer-slot-row").dropzone({
+        accept: ".word-block",
+        overlap: 0.35,
+        ondropactivate(event) {
+          (event.target as HTMLElement).classList.add("drop-active");
+        },
+        ondropdeactivate(event) {
+          (event.target as HTMLElement).classList.remove("drop-active", "drop-target");
+        },
+        ondragenter(event) {
+          const target = event.target as HTMLElement;
+          target.classList.add("drop-target");
+          const slotIndex = getDropSlotIndex(target);
+          setActiveDropSlotIndex(slotIndex);
+        },
+        ondragleave(event) {
+          (event.target as HTMLElement).classList.remove("drop-target");
+          setActiveDropSlotIndex(null);
+        },
+        ondrop(event) {
+          const wordIndex = Number((event.relatedTarget as HTMLElement).dataset.wordIndex);
+          const slotIndex = getDropSlotIndex(event.target as HTMLElement);
+          if (Number.isFinite(wordIndex) && Number.isFinite(slotIndex)) {
+            (event.relatedTarget as HTMLElement).dataset.dropped = "true";
+            placeWordBlockInSlot(wordIndex, slotIndex);
+          }
+          (event.target as HTMLElement).classList.remove("drop-active", "drop-target");
+          setActiveDropSlotIndex(null);
+        }
+      });
+    }
+
+    setupInteract();
+
+    return () => {
+      cleanup = true;
+      void import("interactjs").then(({ default: interact }) => {
+        interact(".word-block").unset();
+        interact(".answer-slot").unset();
+        interact(".answer-slot-row").unset();
+      });
+    };
+  }, [
+    session?.active_question_id,
+    session?.active_options.join("\u0001"),
+    session?.active_scoring_mode,
+    session?.assessment_finished,
+    assembledWordIndexes.join("\u0001")
+  ]);
 
   const duration = useMemo(() => {
     const minutes = Math.floor(seconds / 60)
@@ -261,6 +357,8 @@ export default function StudentPage() {
     const rest = (seconds % 60).toString().padStart(2, "0");
     return `${minutes}:${rest}`;
   }, [seconds]);
+  const filledWordSlotCount = assembledWordIndexes.filter((index) => typeof index === "number").length;
+  const firstEmptyWordSlotIndex = assembledWordIndexes.findIndex((index) => index === null);
 
   async function handleFeeling(value: string) {
     if (!session || session.assessment_finished) return;
@@ -303,23 +401,62 @@ export default function StudentPage() {
     setSaved(score > 0 ? "Jawaban benar" : "Jawaban tersimpan");
   }
 
-  function selectWordBlock(index: number) {
-    if (assembledWordIndexes.includes(index)) return;
-    const nextIndexes = [...assembledWordIndexes, index];
-    setAssembledWordIndexes(nextIndexes);
-    if (nextIndexes.length === (session?.active_options.length ?? 0)) {
-      submitSystemAnswer(nextIndexes).catch(() => setSaved("Tersimpan lokal"));
+  function updateChunkAnswer(indexes: WordSlot[], status: "draft" | "reset" | "submitted" = "draft") {
+    setAssembledWordIndexes(indexes);
+    publishChunkDraft(indexes, status);
+    const completedIndexes = getCompletedWordIndexes(indexes);
+    if (session && completedIndexes.length === session.active_options.length) {
+      submitSystemAnswer(completedIndexes).catch(() => setSaved("Tersimpan lokal"));
     }
   }
 
+  function publishChunkDraft(indexes: WordSlot[], status: "draft" | "reset" | "submitted" = "draft") {
+    if (!session || session.assessment_finished || session.active_scoring_mode !== "system") return;
+    const words = indexes.map((index) => typeof index === "number" ? session.active_options[index] : "");
+    sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_CHUNK_DRAFT", {
+      questionId: session.active_question_id,
+      words,
+      answer: words.filter(Boolean).join(" ").trim(),
+      status,
+      complete: getCompletedWordIndexes(indexes).length === session.active_options.length
+    }).catch(() => undefined);
+  }
+
+  function selectWordBlock(index: number) {
+    const recentPlacement = recentPlacedWordRef.current;
+    if (recentPlacement?.index === index && performance.now() - recentPlacement.at < 250) return;
+    if (assembledWordIndexes.includes(index)) return;
+    const nextIndexes = normalizeWordSlots(assembledWordIndexes, session?.active_options.length ?? 0);
+    const slotIndex = nextIndexes.findIndex((slot) => slot === null);
+    if (slotIndex < 0) return;
+    nextIndexes[slotIndex] = index;
+    updateChunkAnswer(nextIndexes);
+  }
+
+  function placeWordBlockInSlot(wordIndex: number, slotIndex: number) {
+    if (session?.assessment_finished) return;
+    if (assembledWordIndexes.includes(wordIndex)) return;
+    const nextIndexes = normalizeWordSlots(assembledWordIndexes, session?.active_options.length ?? 0);
+    const boundedSlotIndex = Math.max(0, Math.min(slotIndex, nextIndexes.length - 1));
+    if (nextIndexes[boundedSlotIndex] !== null) return;
+    nextIndexes[boundedSlotIndex] = wordIndex;
+    recentPlacedWordRef.current = { index: wordIndex, at: performance.now() };
+    updateChunkAnswer(nextIndexes);
+  }
+
   function removeWordBlock(slotIndex: number) {
-    setAssembledWordIndexes((indexes) => indexes.filter((_, index) => index !== slotIndex));
+    setAssembledWordIndexes((indexes) => {
+      const nextIndexes = normalizeWordSlots(indexes, session?.active_options.length ?? 0);
+      nextIndexes[slotIndex] = null;
+      publishChunkDraft(nextIndexes);
+      return nextIndexes;
+    });
   }
 
   function resetSystemAnswer() {
     if (!session) return;
-    setAssembledWordIndexes([]);
     setShuffledWordBlocks(getAnswerBlocksForQuestion(session));
+    updateChunkAnswer(createEmptyWordSlots(session.active_options.length), "reset");
   }
 
   function expireStudentSession() {
@@ -643,15 +780,42 @@ export default function StudentPage() {
               </div>
               {session.active_scoring_mode === "system" && session.active_options.length > 0 ? (
                 <section className="response-panel block-answer-panel">
-                  <span>{session.active_instruction_text}</span>
-                  <div className="answer-slot-row">
+                  <div className="block-answer-header">
+                    <span>{session.active_instruction_text}</span>
+                    <button
+                      className="student-answer-action reset"
+                      disabled={filledWordSlotCount === 0 || Boolean(session.assessment_finished)}
+                      onClick={resetSystemAnswer}
+                      title="Ulangi"
+                      aria-label="Ulangi"
+                      type="button"
+                    >
+                      <RotateCcw size={28} />
+                    </button>
+                  </div>
+                  <div
+                    className={[
+                      "answer-slot-row",
+                      activeDropSlotIndex === firstEmptyWordSlotIndex ? "drop-target" : ""
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    data-answer-slot-index={firstEmptyWordSlotIndex >= 0 ? firstEmptyWordSlotIndex : 0}
+                  >
                     {session.active_options.map((_, slotIndex) => {
-                      const wordIndex = assembledWordIndexes[slotIndex];
-                      const word = typeof wordIndex === "number" ? session.active_options[wordIndex] : "";
-                      return (
-                        <button
-                          className={word ? "answer-slot filled" : "answer-slot"}
-                          disabled={!word || Boolean(session.assessment_finished)}
+                          const wordIndex = assembledWordIndexes[slotIndex];
+                          const word = typeof wordIndex === "number" ? session.active_options[wordIndex] : "";
+                          return (
+                            <button
+                          className={[
+                            "answer-slot",
+                            word ? "filled" : "",
+                            activeDropSlotIndex === slotIndex && !word ? "drop-target" : ""
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          data-answer-slot-index={slotIndex}
+                          disabled={Boolean(session.assessment_finished)}
                           key={`slot-${slotIndex}`}
                           onClick={() => removeWordBlock(slotIndex)}
                           type="button"
@@ -664,7 +828,14 @@ export default function StudentPage() {
                   <div className="word-block-grid">
                     {shuffledWordBlocks.map(({ id, word }) => (
                       <button
-                        className={assembledWordIndexes.includes(id) ? "word-block used" : "word-block"}
+                        className={[
+                          "word-block",
+                          assembledWordIndexes.includes(id) ? "used" : "",
+                          draggingWordIndex === id ? "dragging" : ""
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        data-word-index={id}
                         disabled={assembledWordIndexes.includes(id) || Boolean(session.assessment_finished)}
                         key={`${word}-${id}`}
                         onClick={() => selectWordBlock(id)}
@@ -674,14 +845,6 @@ export default function StudentPage() {
                       </button>
                     ))}
                   </div>
-                  <button
-                    className="full"
-                    disabled={assembledWordIndexes.length === 0 || Boolean(session.assessment_finished)}
-                    onClick={resetSystemAnswer}
-                    type="button"
-                  >
-                    Ulangi
-                  </button>
                 </section>
               ) : null}
             </>
@@ -691,7 +854,7 @@ export default function StudentPage() {
 
           <section className="response-panel feeling-panel">
             <div className="feeling-grid">
-              {feelingOptions.map((feeling) => (
+              {studentFeelingOptions.map((feeling) => (
                 <button
                   aria-label={feeling.label}
                   className={selectedFeeling === feeling.value ? "feeling-button selected" : "feeling-button"}
@@ -707,7 +870,6 @@ export default function StudentPage() {
             </div>
           </section>
         </div>
-
         {!hideSidePanel ? (
           <aside className="student-side">
             <section className="device-panel student-assessment-title">
@@ -775,6 +937,18 @@ function getAnswerBlocksForQuestion(session: SessionState) {
   return shuffleWordBlocks(session.active_options);
 }
 
+function createEmptyWordSlots(length: number): WordSlot[] {
+  return Array.from({ length }, () => null);
+}
+
+function normalizeWordSlots(indexes: WordSlot[], length: number): WordSlot[] {
+  return Array.from({ length }, (_, index) => indexes[index] ?? null);
+}
+
+function getCompletedWordIndexes(indexes: WordSlot[]) {
+  return indexes.filter((index): index is number => typeof index === "number");
+}
+
 function shouldShuffleAnswerBlocks(session: SessionState) {
   if (session.active_scoring_mode !== "system" || session.active_options.length < 2) return false;
   const markerText = `${session.active_category} ${session.active_question_text} ${session.active_instruction_text}`.toLowerCase();
@@ -786,6 +960,12 @@ function shouldShuffleAnswerBlocks(session: SessionState) {
     markerText.includes("blok") ||
     markerText.includes("susun")
   );
+}
+
+function getDropSlotIndex(target: HTMLElement) {
+  const slot = target.closest("[data-answer-slot-index]") as HTMLElement | null;
+  const slotIndex = Number(slot?.dataset.answerSlotIndex);
+  return Number.isFinite(slotIndex) ? slotIndex : 0;
 }
 
 function formatDigitalTimer(value: number) {
