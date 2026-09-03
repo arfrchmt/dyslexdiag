@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
-  allowedDevOrigins: ["192.168.11.131"],
+  allowedDevOrigins: ["192.168.11.131","localhost"],
   output: "export",
   trailingSlash: true,
   reactStrictMode: true,

@@ -13,6 +13,10 @@ export type SessionState = {
   active_correct_answer?: string | null;
   active_show_student_timer: boolean;
   camera_enabled: boolean;
+  camera_width: number;
+  camera_height: number;
+  camera_fps: number;
+  camera_source_control: "student" | "teacher";
   theme_name: string;
   status: string;
   hide_student_side: boolean;
@@ -48,14 +52,24 @@ export type StudentTokenResponse = {
   expires_at: string;
 };
 
-export let apiBase = initialApiBase();
+const apiBaseStorageKey = "api-base-url";
+export let apiBase: string = initialApiBase();
 export const sessionCode = process.env.NEXT_PUBLIC_SESSION_CODE ?? "ASM-001";
 
-function initialApiBase() {
-  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (envBase) return envBase;
+function defaultApiBase() {
   if (typeof window === "undefined") return "http://127.0.0.1:8000";
   return `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === "https:" ? "8443" : "8000"}`;
+}
+
+function initialApiBase(): string {
+  const fallback = defaultApiBase();
+  if (typeof window !== "undefined") {
+    const savedBase = window.localStorage.getItem(apiBaseStorageKey);
+    if (savedBase) return normalizeApiBase(savedBase, fallback);
+  }
+  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (envBase) return normalizeApiBase(envBase, fallback);
+  return fallback;
 }
 
 function apiBaseCandidates() {
@@ -65,6 +79,33 @@ function apiBaseCandidates() {
     candidates.push(`${window.location.protocol}//${window.location.hostname}:8000`);
   }
   return [...new Set(candidates)];
+}
+
+export function normalizeApiBase(value: string, fallback = defaultApiBase()): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return fallback;
+  const protocol = typeof window !== "undefined" ? window.location.protocol : "http:";
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `${protocol}//${trimmed}`;
+  try {
+    const url = new URL(withProtocol);
+    if (!url.port) url.port = url.protocol === "https:" ? "8443" : "8000";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return withProtocol;
+  }
+}
+
+export function getApiBase() {
+  return apiBase;
+}
+
+export function setApiBase(value: string) {
+  apiBase = normalizeApiBase(value);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(apiBaseStorageKey, apiBase);
+  }
+  return apiBase;
 }
 
 function authHeaders(token?: string): Record<string, string> {
@@ -114,7 +155,7 @@ export async function teacherLogin(username: string, password: string) {
       });
 
       assertApiOk(response, "Login guru gagal");
-      apiBase = base;
+      setApiBase(base);
       return (await response.json()) as AuthResponse;
     } catch (error) {
       lastError = error;
@@ -134,7 +175,7 @@ export async function studentLogin(code: string) {
       });
 
       assertApiOk(response, "Kode token siswa tidak valid");
-      apiBase = base;
+      setApiBase(base);
       return (await response.json()) as StudentAuthResponse;
     } catch (error) {
       lastError = error;
@@ -251,6 +292,28 @@ export async function uploadStudentRecording(
   return response.json() as Promise<{ id: string; source: string; size_bytes: number }>;
 }
 
+export async function uploadTeacherRecording(
+  code: string,
+  token: string,
+  sequence: number,
+  questionId: string,
+  blob: Blob,
+  durationMs: number
+) {
+  const params = new URLSearchParams({
+    sequence: String(sequence),
+    question_id: questionId,
+    duration_ms: String(Math.max(0, Math.round(durationMs)))
+  });
+  const response = await fetch(`${apiBase}/sessions/${code}/teacher-recordings?${params.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": blob.type || "video/webm", ...authHeaders(token) },
+    body: blob
+  });
+  assertApiOk(response, "Gagal mengunggah rekaman guru");
+  return response.json() as Promise<{ id: string; source: string; size_bytes: number }>;
+}
+
 export async function uploadCameraPreview(
   code: string,
   token: string,
@@ -351,7 +414,7 @@ export async function forceStudentLogout(code: string, token: string) {
 export async function updateUiControls(
   code: string,
   token: string,
-  controls: Partial<Pick<SessionState, "hide_student_side" | "request_student_fullscreen" | "request_student_camera" | "theme_name">>
+  controls: Partial<Pick<SessionState, "hide_student_side" | "request_student_fullscreen" | "request_student_camera" | "camera_width" | "camera_height" | "camera_fps" | "camera_source_control" | "theme_name">>
 ) {
   const response = await fetch(`${apiBase}/sessions/${code}/ui-controls`, {
     method: "PATCH",

@@ -17,6 +17,10 @@ class SessionState(BaseModel):
     active_correct_answer: Optional[str] = None
     active_show_student_timer: bool = False
     camera_enabled: bool = True
+    camera_width: int = 640
+    camera_height: int = 480
+    camera_fps: int = 25
+    camera_source_control: str = "student"
     theme_name: str = "mit"
     status: str
     hide_student_side: bool = False
@@ -76,6 +80,10 @@ class SessionUiControlUpdate(BaseModel):
     hide_student_side: Optional[bool] = None
     request_student_fullscreen: Optional[bool] = None
     request_student_camera: Optional[bool] = None
+    camera_width: Optional[int] = Field(default=None, ge=160, le=3840)
+    camera_height: Optional[int] = Field(default=None, ge=120, le=2160)
+    camera_fps: Optional[int] = Field(default=None, ge=1, le=60)
+    camera_source_control: Optional[str] = Field(default=None, pattern="^(student|teacher)$")
     theme_name: Optional[str] = None
 
 
@@ -156,6 +164,7 @@ class StudentVideoRecordRead(BaseModel):
     question_id: str = ""
     label: str
     source: str
+    source_device: str = "student"
     duration: str
     captured_at: str
     status: str
@@ -172,6 +181,10 @@ class StudentQuestionPerformance(BaseModel):
     note: str = ""
     feeling: str = ""
     duration_ms: Optional[float] = None
+    click_count: int = 0
+    clicked_components: list[str] = Field(default_factory=list)
+    clickstream: list[dict] = Field(default_factory=list)
+    additional_data: dict = Field(default_factory=dict)
     is_example: bool = False
     question_active: bool = True
     videos: list[StudentVideoRecordRead] = Field(default_factory=list)

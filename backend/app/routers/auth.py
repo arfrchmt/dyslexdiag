@@ -90,7 +90,7 @@ def create_student_token(
             raise HTTPException(status_code=404, detail="Student not found")
         student_name = student.name
 
-    session_code = f"ASM-{datetime.utcnow().strftime('%H%M%S')}"
+    session_code = f"ASM-PENGAMBILAN-{datetime.utcnow().strftime('%d%m%Y-%H%M%S')}"
     session = AssessmentSession(
         code=session_code,
         student_id=payload.student_id,

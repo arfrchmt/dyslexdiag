@@ -62,6 +62,23 @@ def latest_grade_total(db: Session, session: Optional[AssessmentSession]) -> int
             continue
         if grade.sequence not in totals_by_sequence:
             totals_by_sequence[grade.sequence] = grade.total
+    score_events = (
+        db.query(TimelineEvent)
+        .filter(TimelineEvent.session_id == session.id)
+        .filter(TimelineEvent.event_type.in_(["STUDENT_SYSTEM_SCORE", "STUDENT_MULTIPLE_CHOICE_SCORE"]))
+        .order_by(TimelineEvent.created_at.desc())
+        .all()
+    )
+    for event in score_events:
+        if event.sequence in example_sequences or event.sequence in totals_by_sequence:
+            continue
+        try:
+            payload = json.loads(event.payload or "{}")
+        except json.JSONDecodeError:
+            continue
+        score = payload.get("score")
+        if isinstance(score, (int, float)):
+            totals_by_sequence[event.sequence] = int(score)
     return sum(totals_by_sequence.values())
 
 
@@ -135,12 +152,14 @@ def session_summary(db: Session, session: AssessmentSession) -> StudentSessionSu
 
 def video_record_to_read(video: StudentVideoRecord) -> StudentVideoRecordRead:
     duration_seconds = (video.duration_ms or 0) / 1000
+    source_device = "teacher" if "-teacher-" in video.file_path else "student"
     return StudentVideoRecordRead(
         id=video.id,
         sequence=video.sequence,
         question_id=video.question_id,
-        label=f"Seq {video.sequence} - {video.question_id}",
+        label=f"Seq {video.sequence} - {video.question_id} ({'guru' if source_device == 'teacher' else 'siswa'})",
         source=f"/media/{video.file_path}",
+        source_device=source_device,
         duration=f"{duration_seconds:.1f} dtk",
         captured_at=video.created_at.isoformat(),
         status="tersedia",
@@ -180,6 +199,7 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
     for grade in grades:
         grade_by_sequence.setdefault(grade.sequence, grade)
 
+    score_by_sequence: dict[int, int] = {}
     note_by_sequence: dict[int, str] = {}
     for note in notes:
         note_by_sequence.setdefault(note.sequence, note.note)
@@ -189,6 +209,7 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
     }
     feeling_by_sequence: dict[int, str] = {}
     duration_by_sequence: dict[int, float] = {}
+    clickstream_by_sequence: dict[int, list[dict]] = {}
     example_sequences = assessment_example_sequences(db, session)
     for event in events:
         if event.event_type == "QUESTION_ISSUED":
@@ -206,20 +227,65 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
                 feeling_by_sequence.setdefault(event.sequence, payload.get("feeling", ""))
             except json.JSONDecodeError:
                 pass
-        if event.event_type in {"STUDENT_SYSTEM_SCORE", "TEACHER_RESPONSE_TIME"}:
+        if event.event_type in {"STUDENT_SYSTEM_SCORE", "STUDENT_MULTIPLE_CHOICE_SCORE", "TEACHER_RESPONSE_TIME"}:
             try:
                 payload = json.loads(event.payload)
                 duration_ms = payload.get("duration_ms")
                 if isinstance(duration_ms, (int, float)):
                     duration_by_sequence.setdefault(event.sequence, float(duration_ms))
+                score = payload.get("score")
+                if event.event_type in {"STUDENT_SYSTEM_SCORE", "STUDENT_MULTIPLE_CHOICE_SCORE"} and isinstance(score, (int, float)):
+                    score_by_sequence.setdefault(event.sequence, int(score))
+            except json.JSONDecodeError:
+                pass
+        if event.event_type == "STUDENT_CLICKSTREAM":
+            try:
+                payload = json.loads(event.payload)
+                if isinstance(payload, dict):
+                    clickstream_by_sequence.setdefault(event.sequence, []).append(
+                        {
+                            "component": payload.get("component", ""),
+                            "component_role": payload.get("component_role", ""),
+                            "component_label": payload.get("component_label", ""),
+                            "component_text": payload.get("component_text", ""),
+                            "action": payload.get("action", "click"),
+                            "client_time": payload.get("client_time", ""),
+                            "client_time_ms": payload.get("client_time_ms"),
+                            "elapsed_ms": payload.get("elapsed_ms"),
+                            "question_elapsed_ms": payload.get("question_elapsed_ms"),
+                            "click_index": payload.get("click_index"),
+                            "question_click_index": payload.get("question_click_index"),
+                            "pointer": payload.get("pointer", {}),
+                            "viewport": payload.get("viewport", {}),
+                            "page": payload.get("page", {}),
+                            "session_code": session.code,
+                            "sequence": event.sequence,
+                            "question_id": payload.get("questionId", ""),
+                        }
+                    )
             except json.JSONDecodeError:
                 pass
 
-    sequences = sorted(set(question_by_sequence) | set(grade_by_sequence) | set(note_by_sequence))
+    sequences = sorted(set(question_by_sequence) | set(grade_by_sequence) | set(score_by_sequence) | set(note_by_sequence))
     questions: list[StudentQuestionPerformance] = []
     for sequence in sequences:
         question_id, prompt = question_by_sequence.get(sequence, (f"Seq {sequence}", ""))
         item = db.query(AssessmentItem).filter_by(item_code=question_id).first()
+        clickstream = list(reversed(clickstream_by_sequence.get(sequence, [])))
+        clicked_components = sorted(
+            {
+                str(entry.get("component"))
+                for entry in clickstream
+                if entry.get("component")
+            }
+        )
+        first_click = clickstream[0] if clickstream else None
+        last_click = clickstream[-1] if clickstream else None
+        click_elapsed_values = [
+            entry.get("question_elapsed_ms")
+            for entry in clickstream
+            if isinstance(entry.get("question_elapsed_ms"), (int, float))
+        ]
         questions.append(
             StudentQuestionPerformance(
                 session_code=session.code,
@@ -227,10 +293,29 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
                 sequence=sequence,
                 question_id=question_id,
                 prompt=prompt,
-                score=grade_by_sequence[sequence].total if sequence in grade_by_sequence else 0,
+                score=grade_by_sequence[sequence].total if sequence in grade_by_sequence else score_by_sequence.get(sequence, 0),
                 note=note_by_sequence.get(sequence, ""),
                 feeling=feeling_by_sequence.get(sequence, ""),
                 duration_ms=duration_by_sequence.get(sequence),
+                click_count=len(clickstream),
+                clicked_components=clicked_components,
+                clickstream=clickstream,
+                additional_data={
+                    "clickstream": clickstream,
+                    "clickstream_summary": {
+                        "click_count": len(clickstream),
+                        "clicked_components": clicked_components,
+                        "first_click_time": first_click.get("client_time") if first_click else None,
+                        "last_click_time": last_click.get("client_time") if last_click else None,
+                        "first_click_elapsed_ms": click_elapsed_values[0] if click_elapsed_values else None,
+                        "last_click_elapsed_ms": click_elapsed_values[-1] if click_elapsed_values else None,
+                        "total_click_window_ms": (
+                            click_elapsed_values[-1] - click_elapsed_values[0]
+                            if len(click_elapsed_values) >= 2
+                            else 0
+                        ),
+                    },
+                },
                 is_example=sequence in example_sequences,
                 question_active=item.is_active if item else True,
                 videos=videos_by_sequence.get(sequence, []),

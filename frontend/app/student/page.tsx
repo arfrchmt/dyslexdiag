@@ -1,14 +1,16 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, RotateCcw, Save, UserRound, Wifi } from "lucide-react";
+import { type FormEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Clock, Eye, EyeOff, LogOut, Maximize2, MousePointerClick, RotateCcw, Save, Server, UserRound, Wifi } from "lucide-react";
 
 import { StudentStimulus } from "@/components/StudentStimulus";
 import {
   fetchSession,
   formatExpiry,
+  getApiBase,
   isJwtExpired,
   sendAcknowledgment,
+  setApiBase,
   studentLogin,
   updateStudentStatus,
   uploadCameraPreview,
@@ -34,6 +36,7 @@ export default function StudentPage() {
   const [sessionCode, setSessionCode] = useState("");
   const [studentJwt, setStudentJwt] = useState("");
   const [studentCode, setStudentCode] = useState("");
+  const [serverAddress, setServerAddress] = useState(() => getApiBase());
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [localHideSide, setLocalHideSide] = useState(false);
@@ -47,6 +50,7 @@ export default function StudentPage() {
   const [selectedFeeling, setSelectedFeeling] = useState("");
   const [assembledWordIndexes, setAssembledWordIndexes] = useState<WordSlot[]>([]);
   const [shuffledWordBlocks, setShuffledWordBlocks] = useState<WordBlock[]>([]);
+  const [selectedMultipleChoice, setSelectedMultipleChoice] = useState("");
   const [draggingWordIndex, setDraggingWordIndex] = useState<number | null>(null);
   const [activeDropSlotIndex, setActiveDropSlotIndex] = useState<number | null>(null);
   const [seconds, setSeconds] = useState(0);
@@ -55,6 +59,8 @@ export default function StudentPage() {
   const [saved, setSaved] = useState("Tersimpan lokal");
   const [recordingState, setRecordingState] = useState("Kamera belum aktif");
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraDeviceId, setSelectedCameraDeviceId] = useState("");
   const [theme, setTheme] = useState<AppTheme>("mit");
   const lastAcknowledgedSequence = useRef<number | null>(null);
   const questionRenderedAt = useRef<Record<number, number>>({});
@@ -63,7 +69,10 @@ export default function StudentPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingMetaRef = useRef<{ sequence: number; questionId: string; startedAt: number } | null>(null);
+  const cameraConstraintKeyRef = useRef("");
   const recentPlacedWordRef = useRef<{ index: number; at: number } | null>(null);
+  const questionClickCountRef = useRef(0);
+  const sessionClickCountRef = useRef(0);
   const questionDisplayed = Boolean(
     session &&
       !session.assessment_finished &&
@@ -75,6 +84,7 @@ export default function StudentPage() {
     setTheme(getSavedTheme());
     const savedJwt = window.localStorage.getItem("student-jwt") ?? "";
     const savedCode = window.localStorage.getItem("student-session-code") ?? "";
+    setSelectedCameraDeviceId(window.localStorage.getItem("student-camera-device-id") ?? "");
     if (savedJwt && savedCode) {
       setStudentJwt(savedJwt);
       setSessionCode(savedCode);
@@ -116,10 +126,10 @@ export default function StudentPage() {
   useEffect(() => {
     if (!studentJwt || !sessionCode) return;
     if (!session) return;
-    if (!session?.camera_enabled) {
+    if (!session?.camera_enabled || session.camera_source_control === "teacher") {
       stopQuestionRecording("camera_disabled");
       stopCameraStream();
-      setRecordingState("Kamera dinonaktifkan guru");
+      setRecordingState(session.camera_source_control === "teacher" ? "Kamera aktif di perangkat guru" : "Kamera dinonaktifkan guru");
       return;
     }
     if (!questionDisplayed || !session) {
@@ -136,16 +146,39 @@ export default function StudentPage() {
     return () => {
       stopQuestionRecording("question_changed");
     };
-  }, [questionDisplayed, session?.active_sequence, session?.camera_enabled, sessionCode, studentJwt]);
+  }, [
+    questionDisplayed,
+    session?.active_sequence,
+    session?.camera_enabled,
+    session?.camera_width,
+    session?.camera_height,
+    session?.camera_fps,
+    session?.camera_source_control,
+    selectedCameraDeviceId,
+    sessionCode,
+    studentJwt
+  ]);
 
   useEffect(() => {
-    if (!studentJwt || !sessionCode || !session?.camera_enabled || session.assessment_finished) return;
+    if (!studentJwt || !sessionCode || !session?.camera_enabled || session.camera_source_control === "teacher" || session.assessment_finished) return;
     ensureCameraStream()
       .then(() => {
         if (!questionDisplayed) setRecordingState("Kamera standby");
+        return loadCameraDevices();
       })
       .catch(() => setRecordingState("Kamera tidak tersedia"));
-  }, [studentJwt, sessionCode, session?.camera_enabled, session?.assessment_finished, session?.request_student_camera]);
+  }, [
+    studentJwt,
+    sessionCode,
+    session?.camera_enabled,
+    session?.assessment_finished,
+    session?.request_student_camera,
+    session?.camera_width,
+    session?.camera_height,
+    session?.camera_fps,
+    session?.camera_source_control,
+    selectedCameraDeviceId
+  ]);
 
   useEffect(() => {
     if (!session || !studentJwt || !sessionCode) return;
@@ -182,7 +215,7 @@ export default function StudentPage() {
   }, [questionDisplayed, session?.active_sequence, session?.active_show_student_timer]);
 
   useEffect(() => {
-    if (!session || !studentJwt || !sessionCode || !questionDisplayed || !session.camera_enabled) return;
+    if (!session || !studentJwt || !sessionCode || !questionDisplayed || !session.camera_enabled || session.camera_source_control === "teacher") return;
     let uploading = false;
     const uploadSnapshot = async () => {
       if (uploading) return;
@@ -252,8 +285,10 @@ export default function StudentPage() {
       saveTheme(session.theme_name);
     }
     setSelectedFeeling(feelingDrafts[session.active_question_id] ?? "");
+    setSelectedMultipleChoice("");
     setAssembledWordIndexes(createEmptyWordSlots(session.active_options.length));
     setActiveDropSlotIndex(null);
+    questionClickCountRef.current = 0;
     setShuffledWordBlocks(getAnswerBlocksForQuestion(session));
   }, [session?.active_question_id, session?.active_options.join("\u0001"), session?.theme_name]);
 
@@ -266,14 +301,14 @@ export default function StudentPage() {
       const interact = interactModule.default;
       if (cleanup) return;
 
-      interact(".word-block").draggable({
+      interact(".word-block, .answer-slot.filled").draggable({
         inertia: false,
         autoScroll: true,
         listeners: {
           start(event) {
             const target = event.target as HTMLElement;
             if (target.classList.contains("used")) return;
-            const wordIndex = Number(target.dataset.wordIndex);
+            const wordIndex = Number(target.dataset.wordIndex ?? target.dataset.slotWordIndex);
             if (Number.isFinite(wordIndex)) setDraggingWordIndex(wordIndex);
             target.classList.add("dragging");
             target.dataset.dropped = "";
@@ -301,7 +336,7 @@ export default function StudentPage() {
       });
 
       interact(".answer-slot, .answer-slot-row").dropzone({
-        accept: ".word-block",
+        accept: ".word-block, .answer-slot.filled",
         overlap: 0.35,
         ondropactivate(event) {
           (event.target as HTMLElement).classList.add("drop-active");
@@ -320,14 +355,41 @@ export default function StudentPage() {
           setActiveDropSlotIndex(null);
         },
         ondrop(event) {
-          const wordIndex = Number((event.relatedTarget as HTMLElement).dataset.wordIndex);
+          const draggedElement = event.relatedTarget as HTMLElement;
+          const wordIndex = Number(draggedElement.dataset.wordIndex ?? draggedElement.dataset.slotWordIndex);
+          const sourceSlotIndex = Number(draggedElement.dataset.slotIndex);
           const slotIndex = getDropSlotIndex(event.target as HTMLElement);
           if (Number.isFinite(wordIndex) && Number.isFinite(slotIndex)) {
-            (event.relatedTarget as HTMLElement).dataset.dropped = "true";
-            placeWordBlockInSlot(wordIndex, slotIndex);
+            draggedElement.dataset.dropped = "true";
+            moveWordBlockToSlot(wordIndex, slotIndex, Number.isFinite(sourceSlotIndex) ? sourceSlotIndex : null);
           }
           (event.target as HTMLElement).classList.remove("drop-active", "drop-target");
           setActiveDropSlotIndex(null);
+        }
+      });
+
+      interact(".word-block-grid").dropzone({
+        accept: ".answer-slot.filled",
+        overlap: 0.25,
+        ondropactivate(event) {
+          (event.target as HTMLElement).classList.add("drop-active");
+        },
+        ondropdeactivate(event) {
+          (event.target as HTMLElement).classList.remove("drop-active", "drop-target");
+        },
+        ondragenter(event) {
+          (event.target as HTMLElement).classList.add("drop-target");
+        },
+        ondragleave(event) {
+          (event.target as HTMLElement).classList.remove("drop-target");
+        },
+        ondrop(event) {
+          const sourceSlotIndex = Number((event.relatedTarget as HTMLElement).dataset.slotIndex);
+          if (Number.isFinite(sourceSlotIndex)) {
+            (event.relatedTarget as HTMLElement).dataset.dropped = "true";
+            removeWordBlock(sourceSlotIndex);
+          }
+          (event.target as HTMLElement).classList.remove("drop-active", "drop-target");
         }
       });
     }
@@ -340,6 +402,7 @@ export default function StudentPage() {
         interact(".word-block").unset();
         interact(".answer-slot").unset();
         interact(".answer-slot-row").unset();
+        interact(".word-block-grid").unset();
       });
     };
   }, [
@@ -401,6 +464,32 @@ export default function StudentPage() {
     setSaved(score > 0 ? "Jawaban benar" : "Jawaban tersimpan");
   }
 
+  async function submitMultipleChoiceAnswer(answer: string) {
+    if (!session || session.assessment_finished) return;
+    setSelectedMultipleChoice(answer);
+    setSaved("Menyimpan...");
+    const expected = (session.active_correct_answer ?? "").trim();
+    const score = expected && normalizeAnswer(answer) === normalizeAnswer(expected) ? 10 : 0;
+    const renderedAtMs = questionRenderedAt.current[session.active_sequence] ?? performance.now();
+    const durationMs = Math.max(0, Math.round(performance.now() - renderedAtMs));
+    try {
+      await sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_MULTIPLE_CHOICE_SCORE", {
+        questionId: session.active_question_id,
+        answer,
+        expected,
+        score,
+        duration_ms: durationMs
+      });
+      setSaved(score > 0 ? "Jawaban benar" : "Jawaban tersimpan");
+    } catch (error) {
+      if (error instanceof Error && error.message === "SESSION_EXPIRED") {
+        expireStudentSession();
+        return;
+      }
+      setSaved("Tersimpan lokal");
+    }
+  }
+
   function updateChunkAnswer(indexes: WordSlot[], status: "draft" | "reset" | "submitted" = "draft") {
     setAssembledWordIndexes(indexes);
     publishChunkDraft(indexes, status);
@@ -444,6 +533,22 @@ export default function StudentPage() {
     updateChunkAnswer(nextIndexes);
   }
 
+  function moveWordBlockToSlot(wordIndex: number, targetSlotIndex: number, sourceSlotIndex: number | null = null) {
+    if (session?.assessment_finished) return;
+    const nextIndexes = normalizeWordSlots(assembledWordIndexes, session?.active_options.length ?? 0);
+    const boundedTargetIndex = Math.max(0, Math.min(targetSlotIndex, nextIndexes.length - 1));
+    if (nextIndexes[boundedTargetIndex] !== null) return;
+    const currentSlotIndex = sourceSlotIndex ?? nextIndexes.findIndex((index) => index === wordIndex);
+    if (currentSlotIndex >= 0) {
+      nextIndexes[currentSlotIndex] = null;
+    } else if (nextIndexes.includes(wordIndex)) {
+      return;
+    }
+    nextIndexes[boundedTargetIndex] = wordIndex;
+    recentPlacedWordRef.current = { index: wordIndex, at: performance.now() };
+    updateChunkAnswer(nextIndexes);
+  }
+
   function removeWordBlock(slotIndex: number) {
     setAssembledWordIndexes((indexes) => {
       const nextIndexes = normalizeWordSlots(indexes, session?.active_options.length ?? 0);
@@ -457,6 +562,57 @@ export default function StudentPage() {
     if (!session) return;
     setShuffledWordBlocks(getAnswerBlocksForQuestion(session));
     updateChunkAnswer(createEmptyWordSlots(session.active_options.length), "reset");
+  }
+
+  function handleStudentClick(event: ReactMouseEvent<HTMLElement>) {
+    setClicks((value) => value + 1);
+    if (!session || !studentJwt || !sessionCode || !questionDisplayed) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const componentElement = target?.closest("[data-click-component], button, input, select, textarea, a") as HTMLElement | null;
+    const component = componentElement?.dataset.clickComponent ?? inferComponentName(componentElement);
+    const componentText = sanitizeClickText(componentElement?.textContent ?? "");
+    questionClickCountRef.current += 1;
+    sessionClickCountRef.current += 1;
+    const renderedAtMs = questionRenderedAt.current[session.active_sequence] ?? performance.now();
+    const payload = {
+      questionId: session.active_question_id,
+      sequence: session.active_sequence,
+      action: "click",
+      component,
+      component_role: componentElement?.getAttribute("role") ?? componentElement?.tagName.toLowerCase() ?? "",
+      component_label:
+        componentElement?.dataset.clickLabel ??
+        componentElement?.getAttribute("aria-label") ??
+        componentElement?.getAttribute("title") ??
+        componentText,
+      component_text: componentText,
+      client_time: new Date().toISOString(),
+      client_time_ms: Date.now(),
+      elapsed_ms: performance.now(),
+      question_elapsed_ms: Math.max(0, Math.round(performance.now() - renderedAtMs)),
+      click_index: sessionClickCountRef.current,
+      question_click_index: questionClickCountRef.current,
+      pointer: {
+        x: Math.round(event.clientX),
+        y: Math.round(event.clientY),
+        page_x: Math.round(event.pageX),
+        page_y: Math.round(event.pageY),
+        button: event.button,
+        detail: event.detail
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        device_pixel_ratio: window.devicePixelRatio
+      },
+      page: {
+        path: window.location.pathname,
+        scroll_x: Math.round(window.scrollX),
+        scroll_y: Math.round(window.scrollY),
+        visibility: document.visibilityState
+      }
+    };
+    sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_CLICKSTREAM", payload).catch(() => undefined);
   }
 
   function expireStudentSession() {
@@ -500,19 +656,34 @@ export default function StudentPage() {
   }
 
   async function ensureCameraStream() {
-    if (mediaStreamRef.current) return mediaStreamRef.current;
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera API is unavailable");
+    }
+    if (session?.camera_source_control === "teacher") {
+      throw new Error("Camera is active on teacher device");
+    }
+    const width = session?.camera_width ?? 640;
+    const height = session?.camera_height ?? 480;
+    const fps = session?.camera_fps ?? 25;
+    const cameraConstraintKey = `${width}x${height}@${fps}:${selectedCameraDeviceId || "default"}`;
+    if (mediaStreamRef.current && cameraConstraintKeyRef.current === cameraConstraintKey) {
+      return mediaStreamRef.current;
+    }
+    if (mediaStreamRef.current) {
+      stopQuestionRecording("camera_settings_changed");
+      stopCameraStream();
     }
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: {
-        frameRate: { ideal: 25, max: 25 },
-        width: { ideal: 640 },
-        height: { ideal: 480 }
+        frameRate: { ideal: fps, max: fps },
+        width: { ideal: width },
+        height: { ideal: height },
+        ...(selectedCameraDeviceId ? { deviceId: { exact: selectedCameraDeviceId } } : {})
       }
     });
     mediaStreamRef.current = stream;
+    cameraConstraintKeyRef.current = cameraConstraintKey;
     setCameraReady(true);
     if (cameraPreviewRef.current) {
       cameraPreviewRef.current.srcObject = stream;
@@ -520,8 +691,19 @@ export default function StudentPage() {
     return stream;
   }
 
+  async function loadCameraDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    setCameraDevices(devices.filter((device) => device.kind === "videoinput"));
+  }
+
+  function handleCameraDeviceChange(deviceId: string) {
+    setSelectedCameraDeviceId(deviceId);
+    window.localStorage.setItem("student-camera-device-id", deviceId);
+  }
+
   async function startQuestionRecording(currentSession: SessionState) {
-    if (!currentSession.camera_enabled) return;
+    if (!currentSession.camera_enabled || currentSession.camera_source_control === "teacher") return;
     if (mediaRecorderRef.current?.state === "recording") return;
     const stream = await ensureCameraStream();
     const mimeType = getSupportedRecordingMimeType();
@@ -552,10 +734,13 @@ export default function StudentPage() {
     };
     mediaRecorderRef.current = recorder;
     recorder.start(1000);
-    setRecordingState("Merekam 25fps");
+    setRecordingState(`Merekam ${currentSession.camera_fps}fps`);
     sendAcknowledgment(sessionCode, studentJwt, currentSession.active_sequence, "STUDENT_RECORDING_STARTED", {
       questionId: currentSession.active_question_id,
-      fps: 25,
+      fps: currentSession.camera_fps,
+      width: currentSession.camera_width,
+      height: currentSession.camera_height,
+      camera_source_control: currentSession.camera_source_control,
       started_at_ms: meta.startedAt
     }).catch(() => undefined);
   }
@@ -564,12 +749,18 @@ export default function StudentPage() {
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
     mediaRecorderRef.current = null;
+    try {
+      recorder.requestData();
+    } catch {
+      // Some browsers throw if data is already being flushed.
+    }
     recorder.stop();
   }
 
   function stopCameraStream() {
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
+    cameraConstraintKeyRef.current = "";
     setCameraReady(false);
     if (cameraPreviewRef.current) {
       cameraPreviewRef.current.srcObject = null;
@@ -577,7 +768,7 @@ export default function StudentPage() {
   }
 
   async function requestCameraPermission() {
-    if (!session?.camera_enabled) return;
+    if (!session?.camera_enabled || session.camera_source_control === "teacher") return;
     setRecordingState("Meminta izin kamera...");
     try {
       await ensureCameraStream();
@@ -639,7 +830,9 @@ export default function StudentPage() {
     setLoginError("");
     setLoginLoading(true);
     try {
+      setApiBase(serverAddress);
       const response = await studentLogin(studentCode);
+      setServerAddress(getApiBase());
       window.localStorage.setItem("student-jwt", response.access_token);
       window.localStorage.setItem("student-session-code", response.session.code);
       setStudentJwt(response.access_token);
@@ -669,6 +862,17 @@ export default function StudentPage() {
               maxLength={4}
             />
           </label>
+          <label>
+            <span>Alamat server</span>
+            <input
+              value={serverAddress}
+              onChange={(event) => setServerAddress(event.target.value)}
+              placeholder="192.168.1.10:8000"
+            />
+          </label>
+          <p className="save-state">
+            <Server size={14} /> API: {serverAddress}
+          </p>
           {loginError ? <p className="error-text">{loginError}</p> : null}
           <button className="primary-button full" disabled={loginLoading} type="submit">
             {loginLoading ? "Memproses..." : "Masuk"}
@@ -679,7 +883,7 @@ export default function StudentPage() {
   }
 
   return (
-    <main className={`student-shell theme-${theme}`} onClick={() => setClicks((value) => value + 1)}>
+    <main className={`student-shell theme-${theme}`} onClickCapture={handleStudentClick}>
       <header className="student-topbar">
         <div>
           <p className="eyebrow">UI Siswa</p>
@@ -719,18 +923,19 @@ export default function StudentPage() {
           <span className={isFullscreen ? "status-ok" : "status-warn"}>
             {session?.assessment_finished ? "Asesmen selesai" : isFullscreen ? "Fullscreen aktif" : "Belum fullscreen"}
           </span>
-          <button className="icon-action" onClick={enterFullscreen} type="button" title="Fullscreen">
+          <button className="icon-action" data-click-component="fullscreen-button" onClick={enterFullscreen} type="button" title="Fullscreen">
             <Maximize2 size={16} />
           </button>
           <button
             className="icon-action"
+            data-click-component="student-side-toggle"
             onClick={() => setLocalHideSide((value) => !value)}
             type="button"
             title="Sembunyikan/tampilkan preview kamera dan status"
           >
             {hideSidePanel ? <Eye size={16} /> : <EyeOff size={16} />}
           </button>
-          <button className="icon-action" onClick={logoutStudent} type="button" title="Logout siswa" aria-label="Logout siswa">
+          <button className="icon-action" data-click-component="student-logout" onClick={logoutStudent} type="button" title="Logout siswa" aria-label="Logout siswa">
             <LogOut size={16} />
           </button>
         </div>
@@ -739,17 +944,17 @@ export default function StudentPage() {
       {session?.request_student_fullscreen && !isFullscreen ? (
         <section className="fullscreen-request">
           <strong>Guru meminta layar fullscreen.</strong>
-          <button className="primary-button" onClick={enterFullscreen} type="button">
+          <button className="primary-button" data-click-component="fullscreen-request" onClick={enterFullscreen} type="button">
             <Maximize2 size={17} />
             Aktifkan fullscreen
           </button>
         </section>
       ) : null}
 
-      {session?.camera_enabled && !cameraReady ? (
+      {session?.camera_enabled && session.camera_source_control !== "teacher" && !cameraReady ? (
         <section className="fullscreen-request">
           <strong>Kamera siswa perlu diizinkan untuk preview dan perekaman.</strong>
-          <button className="primary-button" onClick={requestCameraPermission} type="button">
+          <button className="primary-button" data-click-component="camera-permission" onClick={requestCameraPermission} type="button">
             <Camera size={17} />
             Izinkan kamera
           </button>
@@ -773,10 +978,30 @@ export default function StudentPage() {
                   instructionText={session.active_instruction_text}
                   questionId={session.active_question_id}
                   questionText={session.active_question_text}
+                  selectedAnswer={selectedMultipleChoice}
                 />
                 {session.active_show_student_timer && questionDisplayed ? (
                   <div className="student-digital-timer">{formatDigitalTimer(questionTimerMs)}</div>
                 ) : null}
+                <section className="response-panel feeling-panel">
+                  <div className="feeling-grid">
+                    {studentFeelingOptions.map((feeling) => (
+                      <button
+                        aria-label={feeling.label}
+                        className={selectedFeeling === feeling.value ? "feeling-button selected" : "feeling-button"}
+                        data-click-component="feeling-button"
+                        data-click-label={feeling.label}
+                        disabled={!questionDisplayed}
+                        key={feeling.value}
+                        onClick={() => handleFeeling(feeling.value)}
+                        title={feeling.label}
+                        type="button"
+                      >
+                        <span aria-hidden="true">{feeling.icon}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
               {session.active_scoring_mode === "system" && session.active_options.length > 0 ? (
                 <section className="response-panel block-answer-panel">
@@ -784,6 +1009,7 @@ export default function StudentPage() {
                     <span>{session.active_instruction_text}</span>
                     <button
                       className="student-answer-action reset"
+                      data-click-component="chunk-reset"
                       disabled={filledWordSlotCount === 0 || Boolean(session.assessment_finished)}
                       onClick={resetSystemAnswer}
                       title="Ulangi"
@@ -815,6 +1041,10 @@ export default function StudentPage() {
                             .filter(Boolean)
                             .join(" ")}
                           data-answer-slot-index={slotIndex}
+                          data-click-component="answer-slot"
+                          data-click-label={word || `slot-${slotIndex + 1}`}
+                          data-slot-index={slotIndex}
+                          data-slot-word-index={typeof wordIndex === "number" ? wordIndex : undefined}
                           disabled={Boolean(session.assessment_finished)}
                           key={`slot-${slotIndex}`}
                           onClick={() => removeWordBlock(slotIndex)}
@@ -825,7 +1055,7 @@ export default function StudentPage() {
                       );
                     })}
                   </div>
-                  <div className="word-block-grid">
+                  <div className="word-block-grid" data-click-component="word-block-source">
                     {shuffledWordBlocks.map(({ id, word }) => (
                       <button
                         className={[
@@ -836,6 +1066,8 @@ export default function StudentPage() {
                           .filter(Boolean)
                           .join(" ")}
                         data-word-index={id}
+                        data-click-component="word-block"
+                        data-click-label={word}
                         disabled={assembledWordIndexes.includes(id) || Boolean(session.assessment_finished)}
                         key={`${word}-${id}`}
                         onClick={() => selectWordBlock(id)}
@@ -847,28 +1079,29 @@ export default function StudentPage() {
                   </div>
                 </section>
               ) : null}
+              {session.active_scoring_mode === "multiple_choice" && session.active_options.length > 0 ? (
+                <section className="response-panel multiple-choice-panel">
+                  <div className="multiple-choice-grid">
+                    {session.active_options.map((option) => (
+                      <button
+                        className={selectedMultipleChoice === option ? "multiple-choice-option selected" : "multiple-choice-option"}
+                        data-click-component="multiple-choice-option"
+                        data-click-label={option}
+                        disabled={Boolean(session.assessment_finished)}
+                        key={option}
+                        onClick={() => submitMultipleChoiceAnswer(option)}
+                        type="button"
+                      >
+                        <OptionContent value={option} />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : (
             <div className="stimulus">Memuat sesi...</div>
           )}
-
-          <section className="response-panel feeling-panel">
-            <div className="feeling-grid">
-              {studentFeelingOptions.map((feeling) => (
-                <button
-                  aria-label={feeling.label}
-                  className={selectedFeeling === feeling.value ? "feeling-button selected" : "feeling-button"}
-                  disabled={!questionDisplayed}
-                  key={feeling.value}
-                  onClick={() => handleFeeling(feeling.value)}
-                  title={feeling.label}
-                  type="button"
-                >
-                  <span aria-hidden="true">{feeling.icon}</span>
-                </button>
-              ))}
-            </div>
-          </section>
         </div>
         {!hideSidePanel ? (
           <aside className="student-side">
@@ -887,14 +1120,39 @@ export default function StudentPage() {
               </div>
               <div className="metric-row">
                 <span>Kamera</span>
-                <strong>{cameraReady ? recordingState : `${recordingState} - klik Izinkan kamera`}</strong>
+                <strong>
+                  {cameraReady || session?.camera_source_control === "teacher"
+                    ? recordingState
+                    : `${recordingState} - klik Izinkan kamera`}
+                </strong>
               </div>
             </section>
             <section className="device-panel">
               <h2>Status perangkat</h2>
+              {session?.camera_source_control === "student" ? (
+                <label className="compact-label">
+                  <span>Perangkat kamera siswa</span>
+                  <select
+                    data-click-component="camera-source-select"
+                    value={selectedCameraDeviceId}
+                    onChange={(event) => handleCameraDeviceChange(event.target.value)}
+                  >
+                    <option value="">Kamera default</option>
+                    {cameraDevices.map((device, index) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Kamera ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <div className="metric-row">
                 <span>Soal</span>
                 <strong>{session?.active_sequence ?? "-"}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Kamera</span>
+                <strong>{session ? `${session.camera_width}x${session.camera_height} @ ${session.camera_fps}fps` : "-"}</strong>
               </div>
               <div className="metric-row">
                 <span>Render</span>
@@ -966,6 +1224,54 @@ function getDropSlotIndex(target: HTMLElement) {
   const slot = target.closest("[data-answer-slot-index]") as HTMLElement | null;
   const slotIndex = Number(slot?.dataset.answerSlotIndex);
   return Number.isFinite(slotIndex) ? slotIndex : 0;
+}
+
+function inferComponentName(element: HTMLElement | null) {
+  if (!element) return "student-page";
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === "button") return "button";
+  if (tagName === "select") return "select";
+  if (tagName === "input") return "input";
+  if (tagName === "textarea") return "textarea";
+  if (tagName === "a") return "link";
+  return tagName;
+}
+
+function sanitizeClickText(value: string) {
+  return value.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function OptionContent({ value }: { value: string }) {
+  const mediaType = getOptionMediaType(value);
+  if (mediaType === "image") {
+    return <img className="multiple-choice-media" src={value} alt="Pilihan jawaban" />;
+  }
+  if (mediaType === "audio") {
+    return <audio className="multiple-choice-media" controls src={value} />;
+  }
+  if (mediaType === "video") {
+    return <video className="multiple-choice-media" controls playsInline src={value} />;
+  }
+  return <span>{value}</span>;
+}
+
+function getOptionMediaType(value: string) {
+  const trimmed = value.trim();
+  if (!/^https?:\/\/\S+$/i.test(trimmed)) return "text";
+  try {
+    const url = new URL(trimmed);
+    const source = `${url.pathname}${url.search}`;
+    if (/\.(jpe?g|png|gif|webp|bmp|svg)(\?.*)?$/i.test(source)) return "image";
+    if (/\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(source)) return "audio";
+    if (/\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(source)) return "video";
+  } catch {
+    return "text";
+  }
+  return "text";
+}
+
+function normalizeAnswer(value: string) {
+  return value.toLowerCase().trim();
 }
 
 function formatDigitalTimer(value: number) {

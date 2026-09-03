@@ -407,10 +407,10 @@ def create_item(payload: AssessmentItemCreate, _teacher=Depends(require_teacher)
     exists = db.query(AssessmentItem).filter_by(item_code=payload.item_code).first()
     if exists:
         raise HTTPException(status_code=409, detail="Item code already exists")
-    if payload.scoring_mode == "system" and not payload.correct_answer:
-        raise HTTPException(status_code=422, detail="Correct answer is required for system scoring")
-    if payload.scoring_mode == "system" and not payload.options:
-        raise HTTPException(status_code=422, detail="Options are required for system scoring")
+    if payload.scoring_mode in {"system", "multiple_choice"} and not payload.correct_answer:
+        raise HTTPException(status_code=422, detail="Correct answer is required for this scoring mode")
+    if payload.scoring_mode in {"system", "multiple_choice"} and not payload.options:
+        raise HTTPException(status_code=422, detail="Options are required for this scoring mode")
     validate_example_limit(db, payload.category, payload.is_example, payload.is_active)
     item = AssessmentItem(
         item_code=payload.item_code,
@@ -446,10 +446,10 @@ def update_item(
     exists = db.query(AssessmentItem).filter(AssessmentItem.item_code == payload.item_code).first()
     if exists and exists.id != item.id:
         raise HTTPException(status_code=409, detail="Item code already exists")
-    if payload.scoring_mode == "system" and not payload.correct_answer:
-        raise HTTPException(status_code=422, detail="Correct answer is required for system scoring")
-    if payload.scoring_mode == "system" and not payload.options:
-        raise HTTPException(status_code=422, detail="Options are required for system scoring")
+    if payload.scoring_mode in {"system", "multiple_choice"} and not payload.correct_answer:
+        raise HTTPException(status_code=422, detail="Correct answer is required for this scoring mode")
+    if payload.scoring_mode in {"system", "multiple_choice"} and not payload.options:
+        raise HTTPException(status_code=422, detail="Options are required for this scoring mode")
     validate_example_limit(db, payload.category, payload.is_example, payload.is_active, item.id)
     item.item_code = payload.item_code
     item.category = payload.category

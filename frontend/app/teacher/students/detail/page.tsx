@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Download, FileText, FileVideo, Gauge, NotebookText, Printer, X } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, FileText, FileVideo, Gauge, NotebookText, Printer, X } from "lucide-react";
 
 import { assessmentCategories, fetchAssessmentItems, type AssessmentItem } from "@/lib/assessmentContent";
 import { apiBase } from "@/lib/session";
@@ -112,7 +112,7 @@ export default function StudentDetailPage() {
         ].map(csvCell).join(",")
       ),
       "",
-      ["Sesi", "Tanggal", "Seq", "Kode soal", "Contoh", "Soal aktif", "Nilai", "Perasaan", "Durasi", "Catatan", "Prompt"].join(","),
+      ["Sesi", "Tanggal", "Seq", "Kode soal", "Contoh", "Soal aktif", "Nilai", "Perasaan", "Durasi", "Jumlah klik", "Komponen diklik", "Clickstream JSON", "Catatan", "Prompt"].join(","),
       ...visibleQuestions.map((question) =>
         [
           question.session_code,
@@ -124,6 +124,9 @@ export default function StudentDetailPage() {
           `${question.score}/${question.max_score}`,
           question.feeling || "",
           formatQuestionDuration(question.duration_ms),
+          String(question.click_count ?? 0),
+          (question.clicked_components ?? []).join(" | "),
+          JSON.stringify(question.clickstream ?? []),
           question.note || "",
           question.prompt || ""
         ].map(csvCell).join(",")
@@ -136,6 +139,14 @@ export default function StudentDetailPage() {
     link.download = `detail-${student.name.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function openClickstreamAnalytics() {
+    if (!student) return;
+    const session = sessionFilter === "all" ? student.sessions[0]?.code : sessionFilter;
+    if (!session) return;
+    const params = new URLSearchParams({ id: student.id, session });
+    window.open(`/teacher/students/clickstream/?${params.toString()}`, "_blank", "noopener,noreferrer");
   }
 
   if (!clientReady) {
@@ -206,6 +217,10 @@ export default function StudentDetailPage() {
             <div className="panel-title">
               <FileText size={18} />
               <h2>Filter dan cetak capaian per soal</h2>
+              <button className="detail-link panel-title-action" onClick={openClickstreamAnalytics} type="button">
+                <BarChart3 size={16} />
+                Analitik clickstream
+              </button>
             </div>
             <div className="student-report-toolbar">
               <label>
@@ -310,7 +325,9 @@ export default function StudentDetailPage() {
                       >
                         <video muted playsInline preload="metadata" src={mediaUrl(question.videos[0].source)} tabIndex={-1} />
                         <span>Video</span>
-                        <strong>{question.videos.length} file</strong>
+                        <strong>
+                          {question.videos.length} file - {question.videos[0].source_device === "teacher" ? "guru" : "siswa"}
+                        </strong>
                       </button>
                     ) : (
                       <div className="question-video-thumb">
@@ -332,6 +349,10 @@ export default function StudentDetailPage() {
                     <div>
                       <span>Durasi</span>
                       <strong>{formatQuestionDuration(question.duration_ms)}</strong>
+                    </div>
+                    <div>
+                      <span>Klik</span>
+                      <strong>{question.click_count ?? 0}</strong>
                     </div>
                     <p>{question.note || "Belum ada catatan."}</p>
                   </article>

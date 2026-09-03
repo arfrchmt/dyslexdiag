@@ -69,6 +69,10 @@ def to_state(session: AssessmentSession) -> SessionState:
         active_correct_answer=session.active_correct_answer,
         active_show_student_timer=session.active_show_student_timer,
         camera_enabled=session.camera_enabled,
+        camera_width=session.camera_width,
+        camera_height=session.camera_height,
+        camera_fps=session.camera_fps,
+        camera_source_control=session.camera_source_control,
         theme_name=session.theme_name,
         status=session.status,
         hide_student_side=session.hide_student_side,
@@ -171,6 +175,14 @@ def update_ui_controls(
         session.request_student_fullscreen = payload.request_student_fullscreen
     if payload.request_student_camera is not None:
         session.request_student_camera = payload.request_student_camera
+    if payload.camera_width is not None:
+        session.camera_width = payload.camera_width
+    if payload.camera_height is not None:
+        session.camera_height = payload.camera_height
+    if payload.camera_fps is not None:
+        session.camera_fps = payload.camera_fps
+    if payload.camera_source_control is not None:
+        session.camera_source_control = payload.camera_source_control
     if payload.theme_name is not None:
         session.theme_name = payload.theme_name
     session.updated_at = datetime.utcnow()
@@ -264,8 +276,6 @@ async def upload_recording(
 ):
     if student_session.code != code:
         raise HTTPException(status_code=403, detail="Session access denied")
-    if student_session.finished_at:
-        raise HTTPException(status_code=409, detail="Assessment already finished")
     if not student_session.camera_enabled:
         raise HTTPException(status_code=409, detail="Camera recording is disabled")
 
@@ -305,6 +315,70 @@ async def upload_recording(
                     "duration_ms": duration_ms,
                     "size_bytes": len(body),
                     "source": f"/media/{relative_path}",
+                }
+            ),
+        )
+    )
+    db.commit()
+    db.refresh(record)
+    return {"id": record.id, "source": f"/media/{relative_path}", "size_bytes": len(body)}
+
+
+@router.post("/{code}/teacher-recordings")
+async def upload_teacher_recording(
+    code: str,
+    request: Request,
+    sequence: int,
+    question_id: str,
+    duration_ms: float = 0,
+    session: AssessmentSession = Depends(require_session_access),
+    _teacher=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    if session.code != code:
+        raise HTTPException(status_code=403, detail="Session access denied")
+    if not session.camera_enabled:
+        raise HTTPException(status_code=409, detail="Camera recording is disabled")
+    if session.camera_source_control != "teacher":
+        raise HTTPException(status_code=409, detail="Teacher camera is not active for this session")
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=422, detail="Recording body is empty")
+
+    mime_type = request.headers.get("content-type", "video/webm").split(";")[0]
+    extension = "webm" if "webm" in mime_type else "mp4" if "mp4" in mime_type else "bin"
+    session_dir = media_root / "recordings" / safe_filename_part(code)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    safe_question_id = safe_filename_part(question_id)
+    filename = f"seq-{sequence:03d}-{safe_question_id}-teacher-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}.{extension}"
+    file_path = session_dir / filename
+    file_path.write_bytes(body)
+
+    relative_path = file_path.relative_to(media_root).as_posix()
+    record = StudentVideoRecord(
+        session_id=session.id,
+        sequence=sequence,
+        question_id=question_id,
+        file_path=relative_path,
+        mime_type=mime_type,
+        size_bytes=len(body),
+        duration_ms=duration_ms,
+    )
+    db.add(record)
+    db.add(
+        TimelineEvent(
+            session_id=session.id,
+            sequence=sequence,
+            event_type="TEACHER_RECORDING_SAVED",
+            t_ms=elapsed_ms(),
+            payload=json.dumps(
+                {
+                    "questionId": question_id,
+                    "duration_ms": duration_ms,
+                    "size_bytes": len(body),
+                    "source": f"/media/{relative_path}",
+                    "source_device": "teacher",
                 }
             ),
         )

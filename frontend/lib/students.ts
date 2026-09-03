@@ -1,4 +1,4 @@
-import { apiBase } from "@/lib/session";
+import { getApiBase } from "@/lib/session";
 
 export type StudentStatus = "selesai" | "berlangsung" | "belum";
 
@@ -26,6 +26,10 @@ export type StudentQuestionPerformance = {
   note: string;
   feeling: string;
   duration_ms?: number | null;
+  click_count: number;
+  clicked_components: string[];
+  clickstream: Record<string, unknown>[];
+  additional_data: Record<string, unknown>;
   is_example: boolean;
   question_active: boolean;
   videos: StudentVideoRecord[];
@@ -45,6 +49,7 @@ export type StudentVideoRecord = {
   question_id: string;
   label: string;
   source: string;
+  source_device?: "student" | "teacher";
   duration: string;
   captured_at: string;
   status: "tersedia" | "menunggu" | "gagal";
@@ -91,7 +96,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, message: string,
 
 export async function fetchStudents(token: string) {
   const response = await fetchWithTimeout(
-    `${apiBase}/students`,
+    `${getApiBase()}/students`,
     {
       headers: authHeaders(token),
       cache: "no-store"
@@ -103,7 +108,7 @@ export async function fetchStudents(token: string) {
 }
 
 export async function createStudent(token: string, payload: StudentCreatePayload) {
-  const response = await fetch(`${apiBase}/students`, {
+  const response = await fetch(`${getApiBase()}/students`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(payload)
@@ -114,7 +119,7 @@ export async function createStudent(token: string, payload: StudentCreatePayload
 
 export async function fetchStudentDetail(token: string, id: string) {
   const response = await fetchWithTimeout(
-    `${apiBase}/students/${id}`,
+    `${getApiBase()}/students/${id}`,
     {
       headers: authHeaders(token),
       cache: "no-store"

@@ -13,11 +13,13 @@ import {
   EyeOff,
   LogOut,
   Maximize2,
+  Menu,
   Minus,
   Play,
   Plus,
   Radio,
   Save,
+  Server,
   Smile,
   Square,
   Timer,
@@ -37,13 +39,16 @@ import {
   forceStudentLogout,
   formatExpiry,
   generateStudentToken,
+  getApiBase,
   isJwtExpired,
   navigateQuestion,
   saveGrade,
   saveNote,
   sendAcknowledgment,
+  setApiBase,
   teacherLogin,
   updateUiControls,
+  uploadTeacherRecording,
   type SessionState,
   type StudentTokenResponse,
   type TimelineEvent
@@ -103,6 +108,7 @@ export default function TeacherPage() {
   const [teacherJwt, setTeacherJwt] = useState("");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [serverAddress, setServerAddress] = useState(() => getApiBase());
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [studentName, setStudentName] = useState("Siswa 01");
@@ -134,6 +140,8 @@ export default function TeacherPage() {
   const [feelingPulseKey, setFeelingPulseKey] = useState(0);
   const [teacherTimerMs, setTeacherTimerMs] = useState(0);
   const [teacherTimerRunning, setTeacherTimerRunning] = useState(false);
+  const [teacherCameraReady, setTeacherCameraReady] = useState(false);
+  const [teacherCameraState, setTeacherCameraState] = useState("Kamera guru belum aktif");
   const [theme, setTheme] = useState<AppTheme>("mit");
   const lastRenderedSignature = useRef("");
   const lastFeelingSignature = useRef("");
@@ -145,6 +153,13 @@ export default function TeacherPage() {
   const recordedTeacherTimerKeys = useRef<Set<string>>(new Set());
   const categorySelectionDirty = useRef(false);
   const activeCategoryRef = useRef<AssessmentCategory>("phonological_awareness");
+  const teacherCameraStreamRef = useRef<MediaStream | null>(null);
+  const teacherCameraPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const teacherCameraConstraintKeyRef = useRef("");
+  const teacherMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const teacherRecordingChunksRef = useRef<Blob[]>([]);
+  const teacherRecordingMetaRef = useRef<{ sequence: number; questionId: string; startedAt: number } | null>(null);
+  const teacherRecordingUploadRef = useRef<Promise<unknown> | null>(null);
 
   async function refresh() {
     if (!teacherJwt || !session) return;
@@ -258,6 +273,71 @@ export default function TeacherPage() {
     setSaveState(scoreDraftsFromDb[session.active_question_id] ? "Nilai dari database dimuat" : "Nilai awal 0");
   }, [session?.active_question_id, scoreDraftsFromDb]);
 
+  useEffect(() => {
+    if (!session || session.camera_source_control !== "teacher" || session.assessment_finished || !session.camera_enabled) {
+      stopTeacherCameraStream();
+      return;
+    }
+    if (teacherCameraReady) {
+      ensureTeacherCameraStream()
+        .then(() => {
+          setTeacherCameraReady(true);
+          setTeacherCameraState("Kamera guru aktif");
+        })
+        .catch(() => {
+          setTeacherCameraReady(false);
+          setTeacherCameraState("Kamera guru tidak tersedia");
+        });
+    }
+  }, [
+    session?.camera_source_control,
+    session?.camera_enabled,
+    session?.camera_width,
+    session?.camera_height,
+    session?.camera_fps,
+    session?.assessment_finished,
+    teacherCameraReady
+  ]);
+
+  useEffect(() => {
+    return () => stopTeacherCameraStream();
+  }, []);
+
+  useEffect(() => {
+    if (
+      !session ||
+      !teacherJwt ||
+      !session.camera_enabled ||
+      session.camera_source_control !== "teacher" ||
+      session.assessment_finished ||
+      session.active_question_id === "WAITING" ||
+      session.active_category === "waiting"
+    ) {
+      stopTeacherQuestionRecording("camera_inactive");
+      return;
+    }
+
+    startTeacherQuestionRecording(session).catch(() => {
+      setTeacherCameraState("Kamera guru tidak tersedia");
+    });
+
+    return () => {
+      stopTeacherQuestionRecording("question_changed");
+    };
+  }, [
+    teacherJwt,
+    session?.code,
+    session?.active_sequence,
+    session?.active_question_id,
+    session?.active_category,
+    session?.camera_enabled,
+    session?.camera_source_control,
+    session?.camera_width,
+    session?.camera_height,
+    session?.camera_fps,
+    session?.assessment_finished
+  ]);
+
   const total = useMemo(() => fluency + accuracy + confidence, [fluency, accuracy, confidence]);
   const categoryItems = useMemo(() => {
     return assessmentItems.filter((item) => item.category === activeCategory && item.is_active);
@@ -295,26 +375,38 @@ export default function TeacherPage() {
   const activeRecordingSaved = timeline.find(
     (event) => event.event_type === "STUDENT_RECORDING_SAVED" && event.sequence === session?.active_sequence
   );
+  const activeTeacherRecordingSaved = timeline.find(
+    (event) => event.event_type === "TEACHER_RECORDING_SAVED" && event.sequence === session?.active_sequence
+  );
   const activeCameraPreview =
     timeline.find((event) => event.event_type === "STUDENT_CAMERA_PREVIEW" && event.sequence === session?.active_sequence) ??
     timeline.find((event) => event.event_type === "STUDENT_CAMERA_PREVIEW");
   const activeCameraPayload = activeCameraPreview ? parseTimelinePayload(activeCameraPreview.payload) : {};
   const latestRecordingSaved =
-    activeRecordingSaved ?? timeline.find((event) => event.event_type === "STUDENT_RECORDING_SAVED");
+    activeTeacherRecordingSaved ??
+    activeRecordingSaved ??
+    timeline.find((event) => event.event_type === "TEACHER_RECORDING_SAVED" || event.event_type === "STUDENT_RECORDING_SAVED");
   const activeRecordingPayload = latestRecordingSaved ? parseTimelinePayload(latestRecordingSaved.payload) : {};
   const activeRecordingSource =
     typeof activeRecordingPayload.source === "string" ? activeRecordingPayload.source : "";
   const activeCameraSource =
     typeof activeCameraPayload.source === "string" ? activeCameraPayload.source : "";
   const cameraPreviewSource = activeCameraSource || activeRecordingSource;
+  const cameraActiveSide = session?.camera_source_control ?? "student";
+  const teacherCameraActive = cameraActiveSide === "teacher";
+  const cameraTargetLabel = session ? `${session.camera_width}x${session.camera_height} @ ${session.camera_fps}fps` : "-";
   const recordingStatus = session?.assessment_finished
     ? "Sesi selesai"
     : sessionWaiting
       ? "Menunggu soal"
+      : teacherCameraActive
+        ? teacherCameraReady
+          ? "Kamera guru aktif"
+          : "Menunggu izin kamera guru"
       : activeCameraPreview
         ? "Preview live diterima"
         : activeRecordingStarted && !activeRecordingSaved
-        ? "Merekam 25fps"
+        ? `Merekam ${session?.camera_fps ?? 25}fps`
         : latestRecordingSaved
           ? "Rekaman tersimpan"
           : "Menunggu kamera siswa";
@@ -395,15 +487,14 @@ export default function TeacherPage() {
     if (teacherTimerKey.current !== key) {
       resetTeacherTimer(key);
     }
-    if (!activeRenderedAck || stoppedTeacherTimerKeys.current.has(key)) return;
+    if (stoppedTeacherTimerKeys.current.has(key)) return;
 
     startTeacherTimer(key);
   }, [
     session?.active_question_id,
     session?.active_scoring_mode,
     session?.active_sequence,
-    session?.assessment_finished,
-    activeRenderedAck?.t_ms
+    session?.assessment_finished
   ]);
 
   useEffect(() => {
@@ -590,6 +681,12 @@ export default function TeacherPage() {
     );
     if (!confirmed) return;
     await persistAssessment({ fluency, accuracy, confidence }, note, session.active_sequence);
+    if (session.camera_source_control === "teacher") {
+      stopTeacherQuestionRecording("finish_assessment");
+      if (teacherRecordingUploadRef.current) {
+        await teacherRecordingUploadRef.current.catch(() => undefined);
+      }
+    }
     setSession(await finishSession(session.code, teacherJwt));
     setStudentToken(null);
     setSaveState("Asesmen selesai");
@@ -657,7 +754,9 @@ export default function TeacherPage() {
     setAuthError("");
     setAuthLoading(true);
     try {
+      setApiBase(serverAddress);
       const response = await teacherLogin(username, password);
+      setServerAddress(getApiBase());
       window.localStorage.setItem("teacher-jwt", response.access_token);
       window.localStorage.removeItem("teacher-session-code");
       setTeacherJwt(response.access_token);
@@ -724,6 +823,10 @@ export default function TeacherPage() {
 
   async function requestStudentCamera() {
     if (!session || !teacherJwt || !session.camera_enabled) return;
+    if (session.camera_source_control === "teacher") {
+      await requestTeacherCamera();
+      return;
+    }
     try {
       setSession(await updateUiControls(session.code, teacherJwt, { request_student_camera: true }));
       setSaveState("Permintaan izin kamera dikirim");
@@ -731,6 +834,154 @@ export default function TeacherPage() {
       if (error instanceof Error && error.message === "SESSION_EXPIRED") {
         expireTeacherSession();
       }
+    }
+  }
+
+  async function updateCameraSide(nextSide: "student" | "teacher") {
+    if (!session || !teacherJwt) return;
+    try {
+      const nextSession = await updateUiControls(session.code, teacherJwt, {
+        camera_source_control: nextSide,
+        request_student_camera: nextSide === "student" ? session.request_student_camera : false
+      });
+      setSession(nextSession);
+      if (nextSide === "teacher") {
+        setSaveState("Kamera dipindahkan ke perangkat guru");
+        setTeacherCameraState("Tekan tombol kamera untuk memberi izin di perangkat guru");
+      } else {
+        stopTeacherCameraStream();
+        setSaveState("Kamera dipindahkan ke perangkat siswa");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "SESSION_EXPIRED") {
+        expireTeacherSession();
+      } else {
+        setSaveState("Gagal mengubah sumber kamera");
+      }
+    }
+  }
+
+  async function requestTeacherCamera() {
+    if (!session?.camera_enabled) return;
+    setTeacherCameraState("Meminta izin kamera guru...");
+    try {
+      await ensureTeacherCameraStream();
+      setTeacherCameraReady(true);
+      setTeacherCameraState("Kamera guru aktif");
+      if (session && teacherJwt) {
+        sendAcknowledgment(session.code, teacherJwt, session.active_sequence, "TEACHER_CAMERA_READY", {
+          questionId: session.active_question_id,
+          fps: session.camera_fps,
+          width: session.camera_width,
+          height: session.camera_height,
+          camera_source_control: session.camera_source_control,
+          started_at_ms: performance.now()
+        }).catch(() => undefined);
+      }
+    } catch {
+      setTeacherCameraReady(false);
+      setTeacherCameraState("Izin kamera guru belum diberikan");
+    }
+  }
+
+  async function startTeacherQuestionRecording(currentSession: SessionState) {
+    if (!teacherJwt || !currentSession.camera_enabled || currentSession.camera_source_control !== "teacher") return;
+    if (teacherMediaRecorderRef.current?.state === "recording") {
+      const meta = teacherRecordingMetaRef.current;
+      if (meta?.sequence === currentSession.active_sequence && meta.questionId === currentSession.active_question_id) return;
+      stopTeacherQuestionRecording("question_changed");
+    }
+    const stream = await ensureTeacherCameraStream();
+    const mimeType = getSupportedRecordingMimeType();
+    const chunks: Blob[] = [];
+    const meta = {
+      sequence: currentSession.active_sequence,
+      questionId: currentSession.active_question_id,
+      startedAt: performance.now()
+    };
+    teacherRecordingChunksRef.current = chunks;
+    teacherRecordingMetaRef.current = meta;
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      if (teacherRecordingMetaRef.current === meta) {
+        teacherRecordingChunksRef.current = [];
+        teacherRecordingMetaRef.current = null;
+      }
+      if (!meta || chunks.length === 0) return;
+      const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+      const durationMs = performance.now() - meta.startedAt;
+      setTeacherCameraState("Mengunggah rekaman guru...");
+      const upload = uploadTeacherRecording(currentSession.code, teacherJwt, meta.sequence, meta.questionId, blob, durationMs)
+        .then(() => setTeacherCameraState("Rekaman guru tersimpan"))
+        .catch(() => setTeacherCameraState("Rekaman guru belum tersimpan"))
+        .finally(() => {
+          if (teacherRecordingUploadRef.current === upload) {
+            teacherRecordingUploadRef.current = null;
+          }
+        });
+      teacherRecordingUploadRef.current = upload;
+    };
+    teacherMediaRecorderRef.current = recorder;
+    recorder.start(1000);
+    setTeacherCameraReady(true);
+    setTeacherCameraState(`Merekam guru ${currentSession.camera_fps}fps`);
+    sendAcknowledgment(currentSession.code, teacherJwt, currentSession.active_sequence, "TEACHER_RECORDING_STARTED", {
+      questionId: currentSession.active_question_id,
+      fps: currentSession.camera_fps,
+      width: currentSession.camera_width,
+      height: currentSession.camera_height,
+      camera_source_control: currentSession.camera_source_control,
+      started_at_ms: meta.startedAt
+    }).catch(() => undefined);
+  }
+
+  function stopTeacherQuestionRecording(_reason: string) {
+    const recorder = teacherMediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    teacherMediaRecorderRef.current = null;
+    try {
+      recorder.requestData();
+    } catch {
+      // Some browsers throw if data is already being flushed.
+    }
+    recorder.stop();
+  }
+
+  async function ensureTeacherCameraStream() {
+    if (!session || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera API is unavailable");
+    }
+    const cameraConstraintKey = `${session.camera_width}x${session.camera_height}@${session.camera_fps}`;
+    if (teacherCameraStreamRef.current && teacherCameraConstraintKeyRef.current === cameraConstraintKey) {
+      if (teacherCameraPreviewRef.current) teacherCameraPreviewRef.current.srcObject = teacherCameraStreamRef.current;
+      return teacherCameraStreamRef.current;
+    }
+    stopTeacherCameraStream();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: {
+        frameRate: { ideal: session.camera_fps, max: session.camera_fps },
+        width: { ideal: session.camera_width },
+        height: { ideal: session.camera_height }
+      }
+    });
+    teacherCameraStreamRef.current = stream;
+    teacherCameraConstraintKeyRef.current = cameraConstraintKey;
+    if (teacherCameraPreviewRef.current) teacherCameraPreviewRef.current.srcObject = stream;
+    return stream;
+  }
+
+  function stopTeacherCameraStream() {
+    stopTeacherQuestionRecording("camera_stopped");
+    teacherCameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    teacherCameraStreamRef.current = null;
+    teacherCameraConstraintKeyRef.current = "";
+    setTeacherCameraReady(false);
+    if (teacherCameraPreviewRef.current) {
+      teacherCameraPreviewRef.current.srcObject = null;
     }
   }
 
@@ -766,8 +1017,18 @@ export default function TeacherPage() {
               placeholder="admin123"
             />
           </label>
+          <label>
+            <span>Alamat server</span>
+            <input
+              value={serverAddress}
+              onChange={(event) => setServerAddress(event.target.value)}
+              placeholder="192.168.1.10:8000"
+            />
+          </label>
           {authError ? <p className="error-text">{authError}</p> : null}
-          <p className="save-state">API: {apiBase}</p>
+          <p className="save-state">
+            <Server size={14} /> API: {apiBase}
+          </p>
           <button
             className="primary-button full"
             disabled={authLoading}
@@ -787,49 +1048,66 @@ export default function TeacherPage() {
   return (
     <main className={`teacher-shell theme-${theme}`}>
       <header className="teacher-topbar">
-        <div>
+        <div className="teacher-topbar-title">
           <p className="eyebrow">UI Guru</p>
           <h1>Kontrol Asesmen Sinkron</h1>
         </div>
-        <div className="live-pill">
-          <Radio size={16} />
-          Session {session?.code ?? "belum dibuat"}
-        </div>
-        {session ? (
-          <div className={session.assessment_finished ? "live-pill status-ok" : "live-pill status-warn"}>
-            {session.assessment_finished ? "Asesmen selesai" : session.started_at ? "Siswa mulai" : "Menunggu siswa"}
+        <div className="teacher-topbar-info" aria-label="Informasi sesi">
+          <div className="teacher-info-label">
+            <span>Session</span>
+            <strong>{session?.code ?? "belum dibuat"}</strong>
           </div>
-        ) : null}
-        <div className="live-pill">
-          Exp {formatExpiry(teacherJwt)}
+          {session ? (
+            <div className={session.assessment_finished ? "teacher-info-label status-ok" : "teacher-info-label status-warn"}>
+              <span>Status siswa</span>
+              <strong>{session.assessment_finished ? "Asesmen selesai" : session.started_at ? "Siswa mulai" : "Menunggu siswa"}</strong>
+            </div>
+          ) : null}
+          <div className="teacher-info-label">
+            <span>Token</span>
+            <strong>Exp {formatExpiry(teacherJwt)}</strong>
+          </div>
+          <div className="teacher-info-label">
+            <span>API</span>
+            <strong>{apiBase.replace(/^https?:\/\//, "")}</strong>
+          </div>
         </div>
-        <div className="live-pill">
-          API {apiBase.replace(/^https?:\/\//, "")}
-        </div>
-        <label className="theme-picker" title="Theme">
-          <select
-            value={theme}
-            onChange={(event) => {
-              handleThemeChange(event.target.value as AppTheme);
-            }}
-          >
-            {appThemes.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <a className="nav-button" href="/teacher/students/">
-          Daftar siswa
-        </a>
-        <a className="nav-button" href="/teacher/content/">
-          Konten asesmen
-        </a>
-        <button className="nav-button" onClick={logoutTeacher} type="button">
-          <LogOut size={16} />
-          Logout
-        </button>
+        <details className="teacher-primary-menu">
+          <summary>
+            <Menu size={17} />
+            Menu
+          </summary>
+          <nav className="teacher-primary-menu-list" aria-label="Navigasi guru">
+            <label className="theme-picker" title="Theme">
+              <span>Tema</span>
+              <select
+                value={theme}
+                onChange={(event) => {
+                  handleThemeChange(event.target.value as AppTheme);
+                }}
+              >
+                {appThemes.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <a className="nav-button" href="/teacher/students/">
+              Daftar siswa
+            </a>
+            <a className="nav-button" href="/teacher/content/">
+              Daftar konten
+            </a>
+            <a className="nav-button" href="/teacher/settings/">
+              Pengaturan
+            </a>
+            <button className="nav-button" onClick={logoutTeacher} type="button">
+              <LogOut size={16} />
+              Logout
+            </button>
+          </nav>
+        </details>
       </header>
 
       <section className="teacher-grid">
@@ -954,6 +1232,30 @@ export default function TeacherPage() {
                   <em>Session {studentToken.session.code}</em>
                 </div>
               ) : null}
+              {session ? (
+                <div className="camera-side-control">
+                  <span>Kamera aktif</span>
+                  <div className="segmented-control" aria-label="Pilih perangkat kamera aktif">
+                    <button
+                      className={cameraActiveSide === "student" ? "active" : ""}
+                      disabled={controlsDisabled || !session.camera_enabled}
+                      onClick={() => updateCameraSide("student")}
+                      type="button"
+                    >
+                      Siswa
+                    </button>
+                    <button
+                      className={cameraActiveSide === "teacher" ? "active" : ""}
+                      disabled={controlsDisabled || !session.camera_enabled}
+                      onClick={() => updateCameraSide("teacher")}
+                      type="button"
+                    >
+                      Guru
+                    </button>
+                  </div>
+                  <em>{session.camera_enabled ? cameraTargetLabel : "Kamera tidak diaktifkan pada token ini"}</em>
+                </div>
+              ) : null}
             </div>
             <label className="compact-label">
               <span>Kategori soal</span>
@@ -1043,8 +1345,20 @@ export default function TeacherPage() {
               <button
                 disabled={controlsDisabled || !session?.camera_enabled}
                 onClick={requestStudentCamera}
-                title={session?.camera_enabled ? "Minta siswa membuka izin kamera" : "Kamera tidak diaktifkan pada token ini"}
-                aria-label={session?.camera_enabled ? "Minta siswa membuka izin kamera" : "Kamera tidak diaktifkan pada token ini"}
+                title={
+                  !session?.camera_enabled
+                    ? "Kamera tidak diaktifkan pada token ini"
+                    : teacherCameraActive
+                      ? "Aktifkan kamera di perangkat guru"
+                      : "Minta siswa membuka izin kamera"
+                }
+                aria-label={
+                  !session?.camera_enabled
+                    ? "Kamera tidak diaktifkan pada token ini"
+                    : teacherCameraActive
+                      ? "Aktifkan kamera di perangkat guru"
+                      : "Minta siswa membuka izin kamera"
+                }
                 type="button"
               >
                 <Camera size={17} />
@@ -1126,6 +1440,12 @@ export default function TeacherPage() {
                 <strong>Kunci: {activeItem.correct_answer ?? "-"}</strong>
               </div>
             ) : null}
+            {hasActiveCategoryQuestion && activeItem.scoring_mode === "multiple_choice" ? (
+              <div className="system-score-box">
+                <span>Jawaban pilihan ganda dikirim dari sisi siswa.</span>
+                <strong>Kunci: {activeItem.correct_answer ?? "-"}</strong>
+              </div>
+            ) : null}
             {hasActiveCategoryQuestion && activeItem.scoring_mode === "upload" ? (
               <label className="upload-control">
                 <span>Foto tulisan siswa</span>
@@ -1176,7 +1496,16 @@ export default function TeacherPage() {
               <h2>Preview kamera dan posisi</h2>
             </div>
             <div className="camera-teacher-grid">
-              {cameraPreviewSource ? (
+              {teacherCameraActive ? (
+                <section className="camera-card compact live-camera-card teacher-recording-preview">
+                  <div className="camera-frame">
+                    <video className="camera-video-preview" ref={teacherCameraPreviewRef} autoPlay muted playsInline />
+                    <span className="camera-badge">
+                      <Camera size={15} /> Guru
+                    </span>
+                  </div>
+                </section>
+              ) : cameraPreviewSource ? (
                 <section className="camera-card compact live-camera-card teacher-recording-preview">
                   <div className="camera-frame">
                     {activeCameraSource ? (
@@ -1198,8 +1527,16 @@ export default function TeacherPage() {
                   <strong>{session?.camera_enabled ? recordingStatus : "Kamera nonaktif"}</strong>
                 </div>
                 <div className="metric-row">
+                  <span>Perangkat</span>
+                  <strong>{teacherCameraActive ? "Guru" : "Siswa"}</strong>
+                </div>
+                <div className="metric-row">
                   <span>FPS target</span>
-                  <strong>25</strong>
+                  <strong>{session?.camera_fps ?? 25}</strong>
+                </div>
+                <div className="metric-row">
+                  <span>Resolusi</span>
+                  <strong>{session ? `${session.camera_width}x${session.camera_height}` : "-"}</strong>
                 </div>
                 <div className="metric-row">
                   <span>Durasi</span>
@@ -1207,7 +1544,7 @@ export default function TeacherPage() {
                 </div>
                 <div className="metric-row">
                   <span>File</span>
-                  <strong>{activeRecordingSource ? "Video ada" : activeCameraSource ? "Preview ada" : "-"}</strong>
+                  <strong>{teacherCameraActive ? teacherCameraState : activeRecordingSource ? "Video ada" : activeCameraSource ? "Preview ada" : "-"}</strong>
                 </div>
               </div>
             </div>
@@ -1299,4 +1636,15 @@ function formatTimerMs(value: number) {
   const seconds = (totalSeconds % 60).toString().padStart(2, "0");
   const tenths = Math.floor((Math.max(0, value) % 1000) / 100);
   return `${minutes}:${seconds}.${tenths}`;
+}
+
+function getSupportedRecordingMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+    "video/mp4"
+  ];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
 }

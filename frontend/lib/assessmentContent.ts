@@ -1,4 +1,4 @@
-import { apiBase } from "@/lib/session";
+import { getApiBase } from "@/lib/session";
 
 export type AssessmentCategory =
   | "intelligence_fluid"
@@ -7,7 +7,7 @@ export type AssessmentCategory =
   | "rapid_naming"
   | "writing";
 
-export type ScoringMode = "system" | "teacher_rubric" | "binary" | "upload";
+export type ScoringMode = "system" | "multiple_choice" | "teacher_rubric" | "binary" | "upload";
 
 export type AssessmentItem = {
   id: string;
@@ -37,6 +37,7 @@ export const assessmentCategories: Array<{ value: AssessmentCategory; label: str
 
 export const scoringModes: Array<{ value: ScoringMode; label: string }> = [
   { value: "system", label: "Dinilai sistem / kunci jawaban" },
+  { value: "multiple_choice", label: "Pilihan ganda" },
   { value: "binary", label: "Dinilai guru: benar / salah" },
   { value: "teacher_rubric", label: "Dinilai guru: slider nilai" },
   { value: "upload", label: "Upload foto" }
@@ -51,7 +52,7 @@ export function categoryLabel(category: string) {
 }
 
 export async function fetchAssessmentItems(token: string) {
-  const response = await fetch(`${apiBase}/assessment-items`, {
+  const response = await fetch(`${getApiBase()}/assessment-items`, {
     headers: authHeaders(token),
     cache: "no-store"
   });
@@ -60,7 +61,7 @@ export async function fetchAssessmentItems(token: string) {
 }
 
 export async function createAssessmentItem(token: string, payload: Omit<AssessmentItem, "id" | "created_at">) {
-  const response = await fetch(`${apiBase}/assessment-items`, {
+  const response = await fetch(`${getApiBase()}/assessment-items`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(payload)
@@ -74,7 +75,7 @@ export async function updateAssessmentItem(
   itemId: string,
   payload: Omit<AssessmentItem, "id" | "created_at">
 ) {
-  const response = await fetch(`${apiBase}/assessment-items/${itemId}`, {
+  const response = await fetch(`${getApiBase()}/assessment-items/${itemId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(payload)
@@ -84,7 +85,7 @@ export async function updateAssessmentItem(
 }
 
 export async function updateAssessmentItemActive(token: string, itemId: string, isActive: boolean) {
-  const response = await fetch(`${apiBase}/assessment-items/${itemId}/status`, {
+  const response = await fetch(`${getApiBase()}/assessment-items/${itemId}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ is_active: isActive })

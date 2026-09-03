@@ -2,11 +2,16 @@ type StudentStimulusProps = {
   questionId: string;
   questionText: string;
   instructionText?: string;
+  selectedAnswer?: string;
   preview?: boolean;
 };
 
-export function StudentStimulus({ questionId, questionText, instructionText, preview = false }: StudentStimulusProps) {
-  const displayText = questionText.replace("BACA:", "").trim();
+export function StudentStimulus({ questionId, questionText, instructionText, selectedAnswer = "", preview = false }: StudentStimulusProps) {
+  const displayText = questionText
+    .replace("BACA:", "")
+    .replace(/\?\$\$\?/g, selectedAnswer || "____")
+    .replace(/\$\?\?\$/g, "???")
+    .trim();
   const contentParts = parseStimulusContent(displayText);
   const textOnly = contentParts.filter((part) => part.type === "text").map((part) => part.value).join("\n");
   const isLongText = textOnly.length > 36;
@@ -21,6 +26,10 @@ export function StudentStimulus({ questionId, questionText, instructionText, pre
         {contentParts.map((part, index) =>
           part.type === "image" ? (
             <img className="stimulus-image" src={part.value} alt={`Stimulus ${questionId}`} key={`${part.value}-${index}`} />
+          ) : part.type === "audio" ? (
+            <audio className="stimulus-media" controls src={part.value} key={`${part.value}-${index}`} />
+          ) : part.type === "video" ? (
+            <video className="stimulus-media" controls playsInline src={part.value} key={`${part.value}-${index}`} />
           ) : (
             <p className={isLongText ? "long" : ""} key={`${part.value}-${index}`}>
               {part.value}
@@ -40,30 +49,34 @@ function parseStimulusContent(value: string) {
 }
 
 function splitLineByImageUrl(line: string) {
-  const parts: Array<{ type: "image" | "text"; value: string }> = [];
-  const imageUrlPattern = /https?:\/\/\S+\.(?:jpe?g|png|bmp|svg)(?:\?\S*)?/gi;
+  const parts: Array<{ type: "image" | "audio" | "video" | "text"; value: string }> = [];
+  const mediaUrlPattern = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|bmp|svg|mp3|wav|ogg|m4a|aac|mp4|webm|mov|m4v)(?:\?\S*)?/gi;
   let cursor = 0;
-  for (const match of line.matchAll(imageUrlPattern)) {
+  for (const match of line.matchAll(mediaUrlPattern)) {
     const index = match.index ?? 0;
     const before = line.slice(cursor, index).trim();
     if (before) parts.push({ type: "text", value: before });
-    parts.push({ type: "image", value: match[0] });
+    parts.push({ type: getMediaType(match[0]), value: match[0] });
     cursor = index + match[0].length;
   }
   const after = line.slice(cursor).trim();
   if (after) parts.push({ type: "text", value: after });
   if (parts.length > 0) return parts;
-  const imageUrl = getImageUrl(line);
-  return imageUrl ? [{ type: "image", value: imageUrl }] : [{ type: "text", value: line }];
+  const mediaType = getMediaType(line);
+  return mediaType === "text" ? [{ type: "text", value: line }] : [{ type: mediaType, value: line }];
 }
 
-function getImageUrl(value: string) {
+function getMediaType(value: string): "image" | "audio" | "video" | "text" {
   const trimmed = value.trim();
-  if (!/^https?:\/\/\S+$/i.test(trimmed)) return "";
+  if (!/^https?:\/\/\S+$/i.test(trimmed)) return "text";
   try {
     const url = new URL(trimmed);
-    return /\.(jpe?g|png|bmp|svg)(\?.*)?$/i.test(url.pathname + url.search) ? trimmed : "";
+    const source = `${url.pathname}${url.search}`;
+    if (/\.(jpe?g|png|gif|webp|bmp|svg)(\?.*)?$/i.test(source)) return "image";
+    if (/\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i.test(source)) return "audio";
+    if (/\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(source)) return "video";
   } catch {
-    return "";
+    return "text";
   }
+  return "text";
 }

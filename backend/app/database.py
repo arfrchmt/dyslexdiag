@@ -79,6 +79,14 @@ def ensure_runtime_schema() -> None:
             connection.execute(
                 text(f"ALTER TABLE assessment_sessions ADD COLUMN active_show_student_timer BOOLEAN NOT NULL DEFAULT {default}")
             )
+        if "camera_width" not in columns:
+            connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN camera_width INTEGER NOT NULL DEFAULT 640"))
+        if "camera_height" not in columns:
+            connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN camera_height INTEGER NOT NULL DEFAULT 480"))
+        if "camera_fps" not in columns:
+            connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN camera_fps INTEGER NOT NULL DEFAULT 25"))
+        if "camera_source_control" not in columns:
+            connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN camera_source_control VARCHAR(32) NOT NULL DEFAULT 'student'"))
         if "active_instruction_text" not in columns:
             connection.execute(
                 text("ALTER TABLE assessment_sessions ADD COLUMN active_instruction_text TEXT NOT NULL DEFAULT 'Ikuti instruksi soal yang tampil.'")

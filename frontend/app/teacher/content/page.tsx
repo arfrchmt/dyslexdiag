@@ -59,12 +59,12 @@ export default function AssessmentContentPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    if (scoringMode === "system" && !correctAnswer.trim()) {
-      setError("Kunci jawaban wajib diisi untuk mode penilaian skor sistem.");
+    if ((scoringMode === "system" || scoringMode === "multiple_choice") && !correctAnswer.trim()) {
+      setError("Kunci jawaban wajib diisi untuk mode penilaian ini.");
       return;
     }
-    if (scoringMode === "system" && !options.trim()) {
-      setError("Pilihan blok kata wajib diisi untuk mode penilaian skor sistem.");
+    if ((scoringMode === "system" || scoringMode === "multiple_choice") && !options.trim()) {
+      setError(scoringMode === "multiple_choice" ? "Pilihan jawaban wajib diisi untuk pilihan ganda." : "Pilihan blok kata wajib diisi untuk mode penilaian skor sistem.");
       return;
     }
     setSaving(true);
@@ -89,12 +89,14 @@ export default function AssessmentContentPage() {
         show_student_timer: showStudentTimer
       };
       if (editingItem) {
-        await updateAssessmentItem(token, editingItem.id, payload);
+        const updated = await updateAssessmentItem(token, editingItem.id, payload);
+        setEditingItem(updated);
+        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       } else {
         await createAssessmentItem(token, payload);
+        resetForm();
+        await loadItems();
       }
-      resetForm();
-      await loadItems();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Gagal menyimpan konten asesmen");
     } finally {
@@ -224,6 +226,7 @@ export default function AssessmentContentPage() {
             <span>Fill the blank: gunakan pola stimulus "Ibu membeli ___ di pasar.", opsi satu kata per baris, kunci "Ibu membeli roti di pasar."</span>
             <span>Susun kata: gunakan pola stimulus "adik | bola | bermain" atau kalimat acak, opsi satu blok per baris, kunci "adik bermain bola".</span>
             <span>Kalimat lengkap: opsi dapat berupa kata/frasa pendek per baris; urutan kunci harus sama persis dengan jawaban benar.</span>
+            <span>Pilihan ganda: opsi dapat berupa teks atau URL gambar/suara/video. Gunakan ?$$? di stimulus sebagai area jawaban siswa; $??$ akan tampil sebagai ???.</span>
           </div>
           <label>
             <span>Stimulus / teks / kata / gambar URL</span>
@@ -232,7 +235,7 @@ export default function AssessmentContentPage() {
           <label>
             <span>Pilihan jawaban / blok kata / opsi rapid naming</span>
             <textarea
-              required={scoringMode === "system"}
+              required={scoringMode === "system" || scoringMode === "multiple_choice"}
               value={options}
               onChange={(event) => setOptions(event.target.value)}
               placeholder="Satu opsi per baris"
@@ -241,7 +244,7 @@ export default function AssessmentContentPage() {
           <label>
             <span>Kunci jawaban sistem</span>
             <input
-              required={scoringMode === "system"}
+              required={scoringMode === "system" || scoringMode === "multiple_choice"}
               value={correctAnswer}
               onChange={(event) => setCorrectAnswer(event.target.value)}
             />
