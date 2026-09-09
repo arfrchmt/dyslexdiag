@@ -426,6 +426,18 @@ export async function updateUiControls(
   return (await response.json()) as SessionState;
 }
 
+export async function fetchEyeGazeConfig(token: string) {
+  const response = await fetch(`${apiBase}/eye-gaze/config`, { headers: authHeaders(token) });
+  assertApiOk(response, "Gagal memuat konfigurasi eye tracking");
+  return response.json();
+}
+
+export async function updateEyeGazeConfig(token: string, config: Record<string, unknown>) {
+  const response = await fetch(`${apiBase}/eye-gaze/config`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders(token) }, body: JSON.stringify(config) });
+  assertApiOk(response, "Gagal menyimpan konfigurasi eye tracking");
+  return response.json();
+}
+
 export async function updateStudentStatus(code: string, token: string, fullscreen_active: boolean) {
   const response = await fetch(`${apiBase}/sessions/${code}/student-status`, {
     method: "PATCH",

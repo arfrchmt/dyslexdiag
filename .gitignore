@@ -61,3 +61,6 @@ desktop.ini
 *.temp
 *.bak
 *.swp
+
+#Machine learning models
+ml_model

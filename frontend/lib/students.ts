@@ -33,7 +33,28 @@ export type StudentQuestionPerformance = {
   is_example: boolean;
   question_active: boolean;
   videos: StudentVideoRecord[];
+  eye_tracking?: { fixation_count?: number; regression_count?: number; saccade_count?: number; pupil_size_stddev?: number; blink_rate?: number; heatmap?: { x: number; y: number; viewport_x?: number; viewport_y?: number; intensity?: number }[]; trajectory?: { x: number; y: number; viewport_x?: number; viewport_y?: number; intensity?: number }[] };
+  eye_tracking_webgazer?: { fixation_count?: number; regression_count?: number; saccade_count?: number; blink_rate?: number; mean_fixation_duration?: number; total_fixation_duration?: number; revisit_count?: number; aoi_transition_count?: number; aoi_transition_frequency?: number; dwell_time_stimulus?: number; dwell_time_options?: number; response_time_ms?: number | null; correctness?: number | null; heatmap?: { x: number; y: number; viewport_x?: number; viewport_y?: number; intensity?: number; duration_seconds?: number; sample_count?: number }[]; trajectory?: { x: number; y: number; viewport_x?: number; viewport_y?: number; intensity?: number }[]; fixations?: { index: number; x: number; y: number; viewport_x?: number; viewport_y?: number; sample_count?: number }[] };
+  webgazer_calibration?: {
+    point_count?: number;
+    mean_error_px?: number | null;
+    max_error_px?: number | null;
+    points?: Array<{
+      index: number;
+      target?: { x: number; y: number; client_x?: number; client_y?: number };
+      predicted?: { x: number; y: number; client_x?: number; client_y?: number } | null;
+      error_px?: number | null;
+      sample_count?: number;
+    }>;
+  };
+  gaze_layout?: { viewport?: { width: number; height: number; device_pixel_ratio?: number }; question?: { id?: string; text?: string; instruction?: string; options?: string[]; scoring_mode?: string; theme?: string }; components?: Array<{ component?: string; label?: string; rect?: { left: number; top: number; width: number; height: number } }>; };
 };
+
+export async function analyzeEyeTracker(studentId: string, code: string, sequence: number, token: string) {
+  const response = await fetch(`${getApiBase()}/students/${studentId}/sessions/${encodeURIComponent(code)}/questions/${sequence}/analyze-eyetracker`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error("Analisis eye-tracker gagal.");
+  return response.json();
+}
 
 export type StudentSessionSummary = {
   code: string;

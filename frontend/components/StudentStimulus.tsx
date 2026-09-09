@@ -17,12 +17,12 @@ export function StudentStimulus({ questionId, questionText, instructionText, sel
   const isLongText = textOnly.length > 36;
 
   return (
-    <section className={preview ? "stimulus preview" : "stimulus"}>
+    <section className={preview ? "stimulus preview" : "stimulus"} data-gaze-component="stimulus" data-gaze-label={questionId}>
       <div className="stimulus-meta">
         <span>{questionId}</span>
         <span>Asesmen</span>
       </div>
-      <div className="stimulus-content">
+      <div className="stimulus-content" data-gaze-component="stimulus-content">
         {contentParts.map((part, index) =>
           part.type === "image" ? (
             <img className="stimulus-image" src={part.value} alt={`Stimulus ${questionId}`} key={`${part.value}-${index}`} />

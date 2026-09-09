@@ -1,0 +1,491 @@
+2026-09-08 21:20:38,831 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:20:42,616 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:20:42,701 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:20:45,358 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:20:54,061 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=2
+2026-09-08 21:20:54,086 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:20:54,136 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:20:54,210 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:20:55,067 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=2
+2026-09-08 21:20:55,091 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:20:55,166 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:20:55,408 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:20:57,621 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=3
+2026-09-08 21:20:57,646 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:20:57,744 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:20:57,839 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:20:58,744 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=3
+2026-09-08 21:20:58,765 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:20:58,850 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:20:58,938 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:00,188 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=4
+2026-09-08 21:21:00,215 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:00,305 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:00,405 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=4
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:01,119 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=4
+2026-09-08 21:21:01,150 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:01,199 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:01,298 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=4
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:02,034 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=5
+2026-09-08 21:21:02,066 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:02,140 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:02,225 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=5
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:03,202 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=5
+2026-09-08 21:21:03,229 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:03,284 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:03,378 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=5
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:24,877 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-03092026-082041 sequence=6
+2026-09-08 21:21:24,906 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:24,987 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:25,092 ERROR analysis_failed session=ASM-PENGAMBILAN-03092026-082041 sequence=6
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:21:42,941 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:21:42,969 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:21:43,043 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:21:43,140 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:24:10,742 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:24:10,778 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:24:10,851 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:24:10,901 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:24:13,350 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:24:13,380 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:24:13,474 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:24:13,571 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 96, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 88, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:27:35,973 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:27:39,828 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:27:39,936 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:27:42,478 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 101, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:27:51,159 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:27:51,199 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:27:51,258 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:27:51,306 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 101, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:28:21,222 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:28:21,250 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:21,253 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:28:25,754 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:28:25,785 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:25,787 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:28:28,851 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:28:28,885 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:28,886 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:28:31,779 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=4
+2026-09-08 21:28:31,806 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:31,806 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=4
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:28:42,549 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=4
+2026-09-08 21:28:42,578 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:42,579 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=4
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:28:44,012 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:28:44,038 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:28:44,040 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:30:16,668 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:30:16,702 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:30:16,704 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:30:17,412 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:30:17,444 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task device=cpu
+2026-09-08 21:30:17,446 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 94, in _load
+    model = torch.jit.load(str(self.model_path), map_location=device) if self.model_path.suffix == ".pt" else torch.load(str(self.model_path), map_location=device, weights_only=False)
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1554, in load
+    return _legacy_load(
+  File "C:\Program Files\Python39\lib\site-packages\torch\serialization.py", line 1802, in _legacy_load
+    magic_number = pickle_module.load(f, **pickle_load_args)
+_pickle.UnpicklingError: invalid load key, '\x00'.
+2026-09-08 21:31:21,946 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:31:21,978 INFO loading_model path=D:\Development\0_dyslexicdiag\ml_model\mobilenetv3-small-eyegaze-3class.pth device=cpu
+2026-09-08 21:31:22,105 INFO checkpoint_keys=['epoch', 'model_state_dict', 'optimizer_state_dict', 'scheduler_state_dict', 'scaler_state_dict', 'history', 'best_test_angular_error_deg', 'best_val_angular_error_deg', 'best_epoch', 'bad_epochs', 'config', 'extra']
+2026-09-08 21:31:22,195 ERROR analysis_failed session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+Traceback (most recent call last):
+  File "D:\Development\0_dyslexicdiag\backend\app\routers\students.py", line 359, in analyze_eyetracker
+    result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 109, in predict
+    self._load()
+  File "D:\Development\0_dyslexicdiag\backend\services\eye_gaze.py", line 101, in _load
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state.items()})
+  File "C:\Program Files\Python39\lib\site-packages\torch\nn\modules\module.py", line 2624, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for MobileNetV3:
+	Missing key(s) in state_dict: "classifier.0.weight", "classifier.0.bias", "classifier.3.weight", "classifier.3.bias". 
+	Unexpected key(s) in state_dict: "shared.1.weight", "shared.1.bias", "shared.4.weight", "shared.4.bias", "gaze_head.weight", "gaze_head.bias". 
+2026-09-08 21:33:33,634 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 21:37:08,700 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:37:19,649 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 21:37:25,540 INFO frames_read=180 accepted_predictions=180 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-002-IF001-20260908135441429038.webm
+2026-09-08 21:37:25,553 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 21:37:44,776 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:37:51,521 INFO frames_read=201 accepted_predictions=201 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-003-IF002-20260908135453423002.webm
+2026-09-08 21:37:51,532 INFO analysis_finished sequence=3 fixation=1 regression=0 saccade=0
+2026-09-08 21:38:16,506 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-083848 sequence=2
+2026-09-08 21:38:26,424 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-07092026-083848/seq-002-IF018-20260907083956678445.webm
+2026-09-08 21:38:26,453 INFO analysis_finished sequence=2 fixation=7 regression=2 saccade=9
+2026-09-08 21:43:29,147 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-083848 sequence=3
+2026-09-08 21:43:34,419 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-083848 sequence=4
+2026-09-08 21:43:45,177 INFO frames_read=338 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-07092026-083848/seq-003-IF002-20260907084012175062.webm
+2026-09-08 21:43:45,219 INFO analysis_finished sequence=3 fixation=18 regression=13 saccade=29
+2026-09-08 21:43:51,596 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-07092026-083848/seq-004-IF018-20260907085808548661.webm
+2026-09-08 21:43:51,653 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 21:43:59,681 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:44:05,559 INFO frames_read=180 accepted_predictions=180 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-002-IF001-20260908135441429038.webm
+2026-09-08 21:44:05,572 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 21:44:57,288 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:45:03,384 INFO frames_read=180 accepted_predictions=180 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-002-IF001-20260908135441429038.webm
+2026-09-08 21:45:03,398 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 21:46:01,385 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=4
+2026-09-08 21:46:10,031 INFO frames_read=269 accepted_predictions=269 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-004-IF018-20260908135509587307.webm
+2026-09-08 21:46:10,040 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 21:53:51,728 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=3
+2026-09-08 21:54:05,441 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 21:54:12,157 INFO frames_read=201 accepted_predictions=201 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-003-IF002-20260908135453423002.webm
+2026-09-08 21:54:12,185 INFO analysis_finished sequence=3 fixation=1 regression=0 saccade=0
+2026-09-08 21:54:49,718 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 21:54:55,131 INFO frames_read=180 accepted_predictions=180 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-002-IF001-20260908135441429038.webm
+2026-09-08 21:54:55,145 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 21:58:13,825 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-083848 sequence=4
+2026-09-08 21:58:23,618 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-07092026-083848/seq-004-IF018-20260907085808548661.webm
+2026-09-08 21:58:23,652 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 22:04:29,446 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-083848 sequence=5
+2026-09-08 22:04:40,552 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 22:04:43,698 INFO frames_read=97 accepted_predictions=97 video=recordings/ASM-PENGAMBILAN-07092026-083848/seq-005-IF002-20260907085807424330.webm
+2026-09-08 22:04:43,715 INFO analysis_finished sequence=5 fixation=1 regression=1 saccade=2
+2026-09-08 22:10:06,561 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-074558 sequence=8
+2026-09-08 22:10:16,386 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-07092026-074558/seq-008-IF018-20260907074954734898.webm
+2026-09-08 22:10:16,400 INFO analysis_finished sequence=8 fixation=1 regression=0 saccade=0
+2026-09-08 22:10:43,523 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-07092026-074558 sequence=7
+2026-09-08 22:10:45,797 INFO frames_read=75 accepted_predictions=75 video=recordings/ASM-PENGAMBILAN-07092026-074558/seq-007-IF002-20260907074935304761.webm
+2026-09-08 22:10:45,807 INFO analysis_finished sequence=7 fixation=1 regression=0 saccade=0
+2026-09-08 22:14:08,725 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-151208 sequence=2
+2026-09-08 22:14:19,527 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-08092026-151208/seq-002-IF001-20260908151325331897.webm
+2026-09-08 22:14:19,540 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 22:15:02,310 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-151208 sequence=3
+2026-09-08 22:15:09,528 INFO frames_read=221 accepted_predictions=221 video=recordings/ASM-PENGAMBILAN-08092026-151208/seq-003-IF002-20260908151338538609.webm
+2026-09-08 22:15:09,539 INFO analysis_finished sequence=3 fixation=1 regression=0 saccade=0
+2026-09-08 22:15:18,374 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-151208 sequence=4
+2026-09-08 22:15:25,950 INFO frames_read=226 accepted_predictions=226 video=recordings/ASM-PENGAMBILAN-08092026-151208/seq-004-IF018-20260908151352101732.webm
+2026-09-08 22:15:25,958 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 22:20:20,081 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-151820 sequence=2
+2026-09-08 22:20:32,376 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 22:20:35,956 INFO frames_read=268 accepted_predictions=268 video=recordings/ASM-PENGAMBILAN-08092026-151820/seq-002-IF001-20260908151854400370.webm
+2026-09-08 22:20:35,965 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 22:25:23,738 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-152234 sequence=4
+2026-09-08 22:25:34,475 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 22:25:43,472 INFO frames_read=272 accepted_predictions=272 video=recordings/ASM-PENGAMBILAN-08092026-152234/seq-004-IF018-20260908152353924466.webm
+2026-09-08 22:25:43,480 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=2
+2026-09-08 22:39:19,172 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-135317 sequence=2
+2026-09-08 22:39:29,775 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 22:39:35,938 INFO frames_read=180 accepted_predictions=180 video=recordings/ASM-PENGAMBILAN-08092026-135317/seq-002-IF001-20260908135441429038.webm
+2026-09-08 22:39:35,952 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 22:43:44,076 INFO analysis_started student_id=6a1f2b76-01db-435c-a790-b9c182786cfb session=ASM-PENGAMBILAN-08092026-154204 sequence=2
+2026-09-08 22:43:49,917 INFO frames_read=171 accepted_predictions=171 video=recordings/ASM-PENGAMBILAN-08092026-154204/seq-002-IF001-20260908154227869761.webm
+2026-09-08 22:43:49,927 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 23:23:14,508 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-162048 sequence=2
+2026-09-08 23:23:31,335 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 23:23:42,332 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-08092026-162048/seq-002-IF001-20260908162136353472.webm
+2026-09-08 23:23:42,348 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-08 23:24:10,738 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-162048 sequence=4
+2026-09-08 23:24:20,331 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-08092026-162048/seq-004-IF018-20260908162221813624.webm
+2026-09-08 23:24:20,340 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 23:34:17,778 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-08092026-162528 sequence=2
+2026-09-08 23:34:30,356 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-08 23:34:41,818 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-08092026-162528/seq-002-IF001-20260908163232308980.webm
+2026-09-08 23:34:41,842 INFO analysis_finished sequence=2 fixation=4 regression=2 saccade=3
+2026-09-08 23:38:27,058 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-163550 sequence=4
+2026-09-08 23:38:34,431 INFO frames_read=231 accepted_predictions=231 video=recordings/ASM-PENGAMBILAN-08092026-163550/seq-004-IF018-20260908163727471867.webm
+2026-09-08 23:38:34,445 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-08 23:47:33,411 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-163550 sequence=2
+2026-09-08 23:47:45,185 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-08092026-163550/seq-002-IF001-20260908163702392554.webm
+2026-09-08 23:47:45,234 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 00:01:40,470 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-08092026-155359 sequence=2
+2026-09-09 00:01:47,206 INFO frames_read=172 accepted_predictions=172 video=recordings/ASM-PENGAMBILAN-08092026-155359/seq-002-IF001-20260908155458708714.webm
+2026-09-09 00:01:47,227 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 16:11:36,224 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-09092026-090601 sequence=4
+2026-09-09 16:11:58,680 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-09 16:12:08,172 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-09092026-090601/seq-004-IF018-20260909090955861322.webm
+2026-09-09 16:12:08,200 INFO analysis_finished sequence=4 fixation=1 regression=0 saccade=0
+2026-09-09 16:12:37,218 INFO analysis_started student_id=ec03bb1e-3eeb-4afe-a2b3-03dabfff2c29 session=ASM-PENGAMBILAN-09092026-090601 sequence=2
+2026-09-09 16:12:43,414 INFO frames_read=202 accepted_predictions=202 video=recordings/ASM-PENGAMBILAN-09092026-090601/seq-002-IF001-20260909090919078862.webm
+2026-09-09 16:12:43,426 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 16:40:11,047 INFO analysis_started student_id=6a1f2b76-01db-435c-a790-b9c182786cfb session=ASM-PENGAMBILAN-09092026-093731 sequence=2
+2026-09-09 16:40:27,313 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-09 16:40:36,117 INFO frames_read=268 accepted_predictions=268 video=recordings/ASM-PENGAMBILAN-09092026-093731/seq-002-RN002-20260909093905276682.webm
+2026-09-09 16:40:36,131 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 16:41:10,314 INFO analysis_started student_id=6a1f2b76-01db-435c-a790-b9c182786cfb session=ASM-PENGAMBILAN-09092026-093731 sequence=2
+2026-09-09 16:41:19,521 INFO frames_read=268 accepted_predictions=268 video=recordings/ASM-PENGAMBILAN-09092026-093731/seq-002-RN002-20260909093905276682.webm
+2026-09-09 16:41:19,534 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 17:10:16,217 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-09092026-100609 sequence=2
+2026-09-09 17:10:29,435 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-09 17:10:38,674 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-09092026-100609/seq-002-RN002-20260909100822984449.webm
+2026-09-09 17:10:38,694 INFO analysis_finished sequence=2 fixation=1 regression=0 saccade=0
+2026-09-09 21:23:30,504 INFO analysis_started student_id=72e6b9e6-e07c-4ff0-a942-ac57ea75c79c session=ASM-PENGAMBILAN-09092026-141955 sequence=3
+2026-09-09 21:23:40,300 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-09092026-141955/seq-003-RN003-20260909142058915577.webm
+2026-09-09 21:23:40,320 INFO analysis_finished sequence=3 fixation=1 regression=0 saccade=0
+2026-09-09 21:50:56,676 INFO analysis_started student_id=6a1f2b76-01db-435c-a790-b9c182786cfb session=ASM-PENGAMBILAN-09092026-144631 sequence=3
+2026-09-09 21:51:07,906 INFO mediapipe_face_landmarker_loaded path=D:\Development\0_dyslexicdiag\ml_model\face_landmarker.task
+2026-09-09 21:51:18,116 INFO frames_read=300 accepted_predictions=300 video=recordings/ASM-PENGAMBILAN-09092026-144631/seq-003-RN003-20260909144814856032.webm
+2026-09-09 21:51:18,134 INFO analysis_finished sequence=3 fixation=1 regression=0 saccade=0

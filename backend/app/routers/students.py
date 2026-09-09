@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +17,10 @@ from app.schemas import (
     StudentVideoRecordRead,
 )
 from app.security import require_teacher
+from services.eye_gaze import eye_gaze_service
+import logging
+
+eye_tracker_logger = logging.getLogger("eye_tracker")
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -210,8 +215,42 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
     feeling_by_sequence: dict[int, str] = {}
     duration_by_sequence: dict[int, float] = {}
     clickstream_by_sequence: dict[int, list[dict]] = {}
+    eye_by_sequence: dict[int, dict] = {}
+    webgazer_by_sequence: dict[int, dict] = {}
+    calibration_points: list[dict] = []
+    gaze_layout_by_sequence: dict[int, dict] = {}
     example_sequences = assessment_example_sequences(db, session)
     for event in events:
+        if event.event_type == "EYE_TRACKING_ANALYZED":
+            try: eye_by_sequence.setdefault(event.sequence, json.loads(event.payload))
+            except json.JSONDecodeError: pass
+        if event.event_type == "STUDENT_EYE_GAZE":
+            try:
+                gaze = json.loads(event.payload)
+                # New WebGazer samples are already normalized to the actual
+                # student stimulus rectangle. Keep the legacy viewport
+                # fallback so previously recorded sessions remain readable.
+                if gaze.get("gaze_region"):
+                    point = {"x": float(gaze.get("x", 0)), "y": float(gaze.get("y", 0)), "viewport_x": gaze.get("viewport_x"), "viewport_y": gaze.get("viewport_y"), "ui_target": gaze.get("ui_target"), "client_time_ms": gaze.get("client_time_ms"), "intensity": 1}
+                else:
+                    point = {"x": gaze.get("x", 0) / max(1, gaze.get("viewport", {}).get("width", 1)), "y": gaze.get("y", 0) / max(1, gaze.get("viewport", {}).get("height", 1)), "intensity": 1}
+                webgazer_by_sequence.setdefault(event.sequence, {"heatmap": [], "trajectory": []})["heatmap"].append(point)
+                webgazer_by_sequence[event.sequence]["trajectory"].append(point)
+            except (json.JSONDecodeError, TypeError, AttributeError): pass
+        if event.event_type == "STUDENT_EYE_GAZE_CALIBRATION_POINT":
+            try:
+                calibration_point = json.loads(event.payload)
+                if isinstance(calibration_point, dict):
+                    calibration_points.append(calibration_point)
+            except json.JSONDecodeError:
+                pass
+        if event.event_type == "STUDENT_SCREEN_LAYOUT":
+            try:
+                payload = json.loads(event.payload)
+                if isinstance(payload, dict):
+                    gaze_layout_by_sequence.setdefault(event.sequence, payload)
+            except json.JSONDecodeError:
+                pass
         if event.event_type == "QUESTION_ISSUED":
             try:
                 payload = json.loads(event.payload)
@@ -266,6 +305,24 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
             except json.JSONDecodeError:
                 pass
 
+    # Events are loaded newest-first for summary fields, but gaze is a time
+    # series. Restore chronological order before review and metric calculation.
+    for gaze_data in webgazer_by_sequence.values():
+        gaze_data["heatmap"].reverse()
+        gaze_data["trajectory"].reverse()
+    calibration_points.reverse()
+    calibration_errors = [
+        float(point["error_px"])
+        for point in calibration_points
+        if isinstance(point.get("error_px"), (int, float))
+    ]
+    calibration_summary = {
+        "points": calibration_points,
+        "point_count": len(calibration_points),
+        "mean_error_px": sum(calibration_errors) / len(calibration_errors) if calibration_errors else None,
+        "max_error_px": max(calibration_errors) if calibration_errors else None,
+    }
+
     sequences = sorted(set(question_by_sequence) | set(grade_by_sequence) | set(score_by_sequence) | set(note_by_sequence))
     questions: list[StudentQuestionPerformance] = []
     for sequence in sequences:
@@ -319,9 +376,131 @@ def session_questions(db: Session, session: AssessmentSession) -> list[StudentQu
                 is_example=sequence in example_sequences,
                 question_active=item.is_active if item else True,
                 videos=videos_by_sequence.get(sequence, []),
+                eye_tracking=eye_by_sequence.get(sequence, {}),
+                eye_tracking_webgazer={
+                    **webgazer_metrics(webgazer_by_sequence.get(sequence, {})),
+                    "response_time_ms": duration_by_sequence.get(sequence),
+                    "correctness": score_by_sequence.get(sequence),
+                    "max_score": 10 if item else None,
+                },
+                webgazer_calibration=calibration_summary,
+                gaze_layout=gaze_layout_by_sequence.get(sequence, {}),
             )
         )
     return questions
+
+
+def webgazer_metrics(data: dict) -> dict:
+    points = data.get("trajectory", [])
+    distances = [((b["x"] - a["x"]) ** 2 + (b["y"] - a["y"]) ** 2) ** .5 for a, b in zip(points, points[1:])]
+    moving = [distance > .012 for distance in distances]
+    fixation = sum(not current and (index == 0 or moving[index - 1]) for index, current in enumerate(moving))
+    if points and fixation == 0: fixation = 1
+    fixation_groups: list[list[dict]] = []
+    current_group: list[dict] = [points[0]] if points else []
+    for index, point in enumerate(points[1:]):
+        if moving[index]:
+            if current_group:
+                fixation_groups.append(current_group)
+            current_group = [point]
+        else:
+            current_group.append(point)
+    if current_group:
+        fixation_groups.append(current_group)
+    fixations = []
+    for number, group in enumerate(fixation_groups, 1):
+        fixations.append({
+            "index": number,
+            "x": sum(point["x"] for point in group) / len(group),
+            "y": sum(point["y"] for point in group) / len(group),
+            "viewport_x": sum(point.get("viewport_x") or point["x"] for point in group) / len(group),
+            "viewport_y": sum(point.get("viewport_y") or point["y"] for point in group) / len(group),
+            "sample_count": len(group),
+        })
+    # Collapse nearby gaze samples into density circles. Duration is estimated
+    # from client timestamps, with a conservative fallback for legacy samples.
+    heatmap: list[dict] = []
+    for point in points:
+        match = next((cluster for cluster in heatmap if ((cluster["x"] - point["x"]) ** 2 + (cluster["y"] - point["y"]) ** 2) ** .5 <= .035), None)
+        if match is None:
+            heatmap.append({"x": point["x"], "y": point["y"], "viewport_x": point.get("viewport_x"), "viewport_y": point.get("viewport_y"), "sample_count": 1, "duration_seconds": .5})
+        else:
+            count = match["sample_count"]
+            match["x"] = (match["x"] * count + point["x"]) / (count + 1)
+            match["y"] = (match["y"] * count + point["y"]) / (count + 1)
+            match["sample_count"] = count + 1
+            match["duration_seconds"] += .5
+    for point in heatmap:
+        point["intensity"] = min(1, point["duration_seconds"] / 5)
+    fixation_durations = [max(.5, (group[-1].get("client_time_ms") - group[0].get("client_time_ms")) / 1000) if group[-1].get("client_time_ms") is not None and group[0].get("client_time_ms") is not None else len(group) * .5 for group in fixation_groups]
+    aoi_labels = [((point.get("ui_target") or {}).get("component") or "other") for point in points]
+    aoi_transitions = sum(left != right for left, right in zip(aoi_labels, aoi_labels[1:]))
+    visited_aois: set[str] = set()
+    previous_aoi = None
+    revisit_count = 0
+    for aoi in aoi_labels:
+        if aoi != previous_aoi:
+            if aoi in visited_aois: revisit_count += 1
+            visited_aois.add(aoi)
+            previous_aoi = aoi
+    dwell_stimulus = sum(.5 for label in aoi_labels if label in {"stimulus", "stimulus-content"})
+    dwell_options = sum(.5 for label in aoi_labels if label in {"answer-option", "feeling-button"})
+    total_duration = sum(fixation_durations)
+    return {**data, "heatmap": heatmap, "fixation_count": fixation, "mean_fixation_duration": sum(fixation_durations) / len(fixation_durations) if fixation_durations else 0, "total_fixation_duration": total_duration, "fixation_durations": fixation_durations, "fixations": fixations, "saccade_count": sum(current for current in moving), "regression_count": sum(b["x"] - a["x"] < -.012 for a, b in zip(points, points[1:])), "revisit_count": revisit_count, "aoi_transition_count": aoi_transitions, "aoi_transition_frequency": aoi_transitions / max(.5, total_duration), "dwell_time_stimulus": dwell_stimulus, "dwell_time_options": dwell_options, "blink_rate": None}
+
+
+@router.post("/{student_id}/sessions/{code}/questions/{sequence}/analyze-eyetracker")
+def analyze_eyetracker(student_id: str, code: str, sequence: int, _teacher=Depends(require_teacher), db: Session = Depends(get_db)):
+    eye_tracker_logger.info("analysis_started student_id=%s session=%s sequence=%s", student_id, code, sequence)
+    session = db.query(AssessmentSession).filter_by(code=code, student_id=student_id).first()
+    if not session: raise HTTPException(404, "Sesi tidak ditemukan")
+    videos = db.query(StudentVideoRecord).filter_by(session_id=session.id, sequence=sequence).order_by(StudentVideoRecord.created_at.desc()).all()
+    # StudentVideoRecord predates the source_device field; teacher recordings
+    # are marked in their filename, so do not access a non-existent ORM attr.
+    video = next((item for item in videos if "-teacher-" not in item.file_path), videos[0] if videos else None)
+    if not video:
+        eye_tracker_logger.warning("video_not_found session=%s sequence=%s", code, sequence)
+        raise HTTPException(404, "Rekaman siswa tidak ditemukan")
+    try:
+        import cv2
+        from PIL import Image
+        capture = cv2.VideoCapture(str(Path(__file__).resolve().parents[2] / "media" / video.file_path))
+        frame_count = 0
+        labels, points, pupils, blinks = [], [], [], []
+        while len(labels) < 300:
+            ok, frame = capture.read()
+            if not ok: break
+            frame_count += 1
+            result = eye_gaze_service.predict(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+            if result.get("accepted"):
+                labels.append(result["label"])
+                points.append({"x": result.get("gaze_x", {"left": .25, "center": .5, "right": .75}[result["label"]]), "y": result.get("gaze_y", .5), "intensity": result["confidence"]})
+                if result.get("pupil_size") is not None: pupils.append(result["pupil_size"])
+                blinks.append(bool(result.get("blink")))
+        capture.release()
+        eye_tracker_logger.info("frames_read=%s accepted_predictions=%s video=%s", frame_count, len(labels), video.file_path)
+    except Exception as exc:
+        eye_tracker_logger.exception("analysis_failed session=%s sequence=%s", code, sequence)
+        raise HTTPException(422, f"Analisis gagal: {exc}")
+    distances = [((b["x"] - a["x"]) ** 2 + (b["y"] - a["y"]) ** 2) ** .5 for a, b in zip(points, points[1:])]
+    transitions = sum(value > .012 for value in distances)
+    regressions = sum(b["x"] - a["x"] < -.012 for a, b in zip(points, points[1:]))
+    fixation_count = 0
+    was_moving = True
+    for value in distances:
+        moving = value > .012
+        if not moving and was_moving: fixation_count += 1
+        was_moving = moving
+    if points and fixation_count == 0: fixation_count = 1
+    import statistics
+    fps = capture.get(cv2.CAP_PROP_FPS) or 25
+    blink_events = sum(current and not previous for previous, current in zip([False] + blinks, blinks))
+    blink_rate = blink_events * 60 / max(1, len(blinks) / fps)
+    metrics = {"fixation_count": fixation_count, "regression_count": regressions, "saccade_count": transitions, "pupil_size_stddev": statistics.pstdev(pupils) if len(pupils) > 1 else 0, "blink_rate": blink_rate, "heatmap": points, "trajectory": points, "frame_width": 1, "frame_height": 1}
+    db.add(TimelineEvent(session_id=session.id, sequence=sequence, event_type="EYE_TRACKING_ANALYZED", t_ms=0, payload=json.dumps(metrics)))
+    db.commit()
+    eye_tracker_logger.info("analysis_finished sequence=%s fixation=%s regression=%s saccade=%s", sequence, metrics["fixation_count"], regressions, transitions)
+    return {**metrics, "diagnostics": {"frames_read": frame_count, "accepted_predictions": len(labels), "log_file": "backend/logs/eye_tracker.log"}}
 
 
 @router.get("", response_model=list[StudentListItem])
@@ -374,5 +553,6 @@ def student_detail(student_id: str, _teacher=Depends(require_teacher), db: Sessi
         created_at=student.created_at.isoformat(),
         sessions=[session_summary(db, session_entry) for session_entry in sessions],
         questions=questions,
-        videos=videos,
+                    videos=videos,
+                    eye_tracking={},
     )

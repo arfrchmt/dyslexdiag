@@ -31,6 +31,10 @@ type WordBlock = {
 
 type WordSlot = number | null;
 
+declare global {
+  interface Window { webgazer?: any; }
+}
+
 export default function StudentPage() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [sessionCode, setSessionCode] = useState("");
@@ -59,6 +63,9 @@ export default function StudentPage() {
   const [saved, setSaved] = useState("Tersimpan lokal");
   const [recordingState, setRecordingState] = useState("Kamera belum aktif");
   const [cameraReady, setCameraReady] = useState(false);
+  const [webgazerStatus, setWebgazerStatus] = useState<"nonaktif" | "memuat" | "siap" | "aktif" | "gagal">("nonaktif");
+  const [calibrationClicks, setCalibrationClicks] = useState(0);
+  const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraDeviceId, setSelectedCameraDeviceId] = useState("");
   const [theme, setTheme] = useState<AppTheme>("mit");
@@ -73,6 +80,9 @@ export default function StudentPage() {
   const recentPlacedWordRef = useRef<{ index: number; at: number } | null>(null);
   const questionClickCountRef = useRef(0);
   const sessionClickCountRef = useRef(0);
+  const webgazerScriptRef = useRef<HTMLScriptElement | null>(null);
+  const webgazerLastSentRef = useRef(0);
+  const calibrationPredictionHistoryRef = useRef<Array<{ x: number; y: number; timestamp: number }>>([]);
   const questionDisplayed = Boolean(
     session &&
       !session.assessment_finished &&
@@ -196,6 +206,7 @@ export default function StudentPage() {
         questionId: session.active_question_id,
         rendered_at_ms: renderedAtMs
       }).catch(() => undefined);
+      sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_SCREEN_LAYOUT", captureScreenLayout(session)).catch(() => undefined);
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -236,6 +247,74 @@ export default function StudentPage() {
     const interval = window.setInterval(uploadSnapshot, 2000);
     return () => window.clearInterval(interval);
   }, [questionDisplayed, session?.active_sequence, session?.active_question_id, sessionCode, studentJwt]);
+
+  useEffect(() => {
+    const calibrationActive = Boolean(cameraReady && session && !calibrationComplete && session.camera_enabled && session.camera_source_control !== "teacher");
+    if ((!questionDisplayed && !calibrationActive) || !studentJwt || !sessionCode || session?.camera_source_control === "teacher") return;
+    let cancelled = false;
+    setWebgazerStatus("memuat");
+    const startWebGazer = () => {
+      const webgazer = window.webgazer;
+      if (!webgazer || cancelled) return;
+      const currentSession = session;
+      if (!currentSession) return;
+      try {
+        webgazer.setGazeListener((data: { x: number; y: number } | null, timestamp: number) => {
+          if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+          setWebgazerStatus("aktif");
+          if (!calibrationComplete) {
+            calibrationPredictionHistoryRef.current = [
+              ...calibrationPredictionHistoryRef.current.filter((sample) => timestamp - sample.timestamp <= 1200),
+              { x: data.x, y: data.y, timestamp }
+            ].slice(-30);
+          }
+          if (!questionDisplayed || !calibrationComplete) return;
+          if (timestamp - webgazerLastSentRef.current < 500) return;
+          webgazerLastSentRef.current = timestamp;
+          const region = document.querySelector(".student-main .stimulus")?.getBoundingClientRect();
+          const gazeRegion = region && region.width > 0 && region.height > 0
+            ? { left: region.left, top: region.top, width: region.width, height: region.height }
+            : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+          // Store gaze in the same coordinate space used by the teacher's
+          // stimulus overlay, rather than mixing viewport and stimulus pixels.
+          const x = (data.x - gazeRegion.left) / gazeRegion.width;
+          const y = (data.y - gazeRegion.top) / gazeRegion.height;
+          const focusedElement = document.elementFromPoint(data.x, data.y)?.closest<HTMLElement>("[data-gaze-component]");
+          const focusedRect = focusedElement?.getBoundingClientRect();
+          const uiTarget = focusedElement ? { component: focusedElement.dataset.gazeComponent, label: focusedElement.dataset.gazeLabel ?? focusedElement.getAttribute("aria-label") ?? "", rect: focusedRect ? { left: focusedRect.left, top: focusedRect.top, width: focusedRect.width, height: focusedRect.height } : null } : null;
+          sendAcknowledgment(sessionCode, studentJwt, currentSession.active_sequence, "STUDENT_EYE_GAZE", { questionId: currentSession.active_question_id, x, y, viewport_x: data.x / window.innerWidth, viewport_y: data.y / window.innerHeight, client_x: data.x, client_y: data.y, client_time_ms: timestamp, viewport: { width: window.innerWidth, height: window.innerHeight, device_pixel_ratio: window.devicePixelRatio }, gaze_region: gazeRegion, ui_target: uiTarget }).catch(() => undefined);
+        });
+        if (!cameraPreviewRef.current || !mediaStreamRef.current) {
+          setWebgazerStatus("gagal");
+          setRecordingState("Stream kamera belum siap untuk WebGazer");
+          return;
+        }
+        // Reuse the application's already-authorized camera video. This
+        // prevents WebGazer from opening a second webcam stream.
+        if (typeof webgazer.setStaticVideo === "function") webgazer.setStaticVideo(mediaStreamRef.current);
+        const ready = typeof webgazer.isReady === "function" && webgazer.isReady();
+        const startResult = ready && typeof webgazer.resume === "function" ? webgazer.resume() : webgazer.begin();
+        Promise.resolve(startResult).catch(() => setRecordingState("WebGazer gagal memulai"));
+        webgazer.showVideo(false);
+        webgazer.showPredictionPoints(false);
+        sendAcknowledgment(sessionCode, studentJwt, currentSession.active_sequence, "STUDENT_EYE_GAZE_STATUS", { questionId: currentSession.active_question_id, status: calibrationActive ? "calibration_started" : "started", ready }).catch(() => undefined);
+        setWebgazerStatus("siap");
+        setRecordingState("Kamera + WebGazer siap");
+      } catch { setWebgazerStatus("gagal"); setRecordingState("WebGazer gagal memulai"); }
+    };
+    if (window.webgazer) startWebGazer();
+    else { const script = document.createElement("script"); script.src = `${getApiBase()}/models/webgazer.js`; script.async = true; script.onload = startWebGazer; script.onerror = () => { setWebgazerStatus("gagal"); setRecordingState("WebGazer gagal dimuat"); }; document.head.appendChild(script); webgazerScriptRef.current = script; }
+    return () => {
+      cancelled = true;
+      try {
+        window.webgazer?.setGazeListener(null);
+        // Preserve the trained regression model across calibration completion
+        // and question changes. end() can tear down/reset WebGazer state.
+        window.webgazer?.pause();
+      } catch { /* cleanup is best effort */ }
+      setWebgazerStatus("nonaktif");
+    };
+  }, [questionDisplayed, calibrationComplete, cameraReady, session?.active_sequence, session?.active_question_id, session?.active_question_text, session?.camera_source_control, session?.camera_enabled, session?.assessment_finished, sessionCode, studentJwt]);
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -783,6 +862,64 @@ export default function StudentPage() {
     }
   }
 
+  function handleCalibrationClick(event: ReactMouseEvent<HTMLButtonElement>, index: number) {
+    if (!window.webgazer || calibrationComplete) return;
+    if (index !== calibrationClicks) return;
+    const next = calibrationClicks + 1;
+    const target = {
+      x: event.clientX / window.innerWidth,
+      y: event.clientY / window.innerHeight,
+      client_x: event.clientX,
+      client_y: event.clientY
+    };
+    const recentPredictions = calibrationPredictionHistoryRef.current.slice(-10);
+    const prediction = recentPredictions.length > 0
+      ? {
+          client_x: recentPredictions.reduce((sum, sample) => sum + sample.x, 0) / recentPredictions.length,
+          client_y: recentPredictions.reduce((sum, sample) => sum + sample.y, 0) / recentPredictions.length
+        }
+      : null;
+    const predicted = prediction
+      ? {
+          x: prediction.client_x / window.innerWidth,
+          y: prediction.client_y / window.innerHeight,
+          ...prediction
+        }
+      : null;
+    const errorPx = prediction ? Math.hypot(prediction.client_x - event.clientX, prediction.client_y - event.clientY) : null;
+    try {
+      // WebGazer must receive the actual clicked target coordinate. Sending
+      // the screen center for every target collapses the calibration model.
+      window.webgazer.recordScreenPosition(event.clientX, event.clientY, "click");
+    } catch {
+      // Older WebGazer builds can omit recordScreenPosition; the click still advances the UI.
+    }
+    if (session && studentJwt && sessionCode) {
+      sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_EYE_GAZE_CALIBRATION_POINT", {
+        index: index + 1,
+        target,
+        predicted,
+        error_px: errorPx,
+        sample_count: recentPredictions.length,
+        viewport: { width: window.innerWidth, height: window.innerHeight, device_pixel_ratio: window.devicePixelRatio },
+        coordinate_space: "viewport"
+      }).catch(() => undefined);
+    }
+    calibrationPredictionHistoryRef.current = [];
+    setCalibrationClicks(next);
+    if (next >= 9) {
+      setCalibrationComplete(true);
+      setWebgazerStatus("aktif");
+      if (session && studentJwt && sessionCode) {
+        sendAcknowledgment(sessionCode, studentJwt, session.active_sequence, "STUDENT_EYE_GAZE_STATUS", { questionId: session.active_question_id, status: "calibration_completed", clicks: next }).catch(() => undefined);
+      }
+    }
+  }
+
+  function calibrationDotPosition(leftPercent: number, topPercent: number) {
+    return { left: `${leftPercent}%`, top: `${topPercent}%` };
+  }
+
   function captureCameraPreview() {
     const video = cameraPreviewRef.current;
     if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -845,7 +982,7 @@ export default function StudentPage() {
     }
   }
 
-  const hideSidePanel = localHideSide || Boolean(session?.hide_student_side);
+  const hideSidePanel = calibrationComplete || localHideSide || Boolean(session?.hide_student_side);
 
   if (!studentJwt || !sessionCode) {
     return (
@@ -967,6 +1104,27 @@ export default function StudentPage() {
           <strong>Asesmen sudah diselesaikan guru.</strong>
         </section>
       ) : null}
+      {session?.camera_enabled && session.camera_source_control !== "teacher" && cameraReady && !calibrationComplete ? (
+        <section className="calibration-overlay" aria-label="Kalibrasi eye tracker">
+          <div className="calibration-card">
+            <p className="eyebrow">Langkah persiapan</p>
+            <h1>Kalibrasi pelacak mata</h1>
+            <p>Ikuti titik merah dengan mata, lalu klik setiap titik. Duduk tegak dan jaga jarak dari kamera.</p>
+            <div className="calibration-progress">{calibrationClicks} dari 9 titik</div>
+          </div>
+          {[[14, 16], [50, 16], [86, 16], [14, 50], [50, 50], [86, 50], [14, 84], [50, 84], [86, 84]].map(([left, top], index) => (
+            <button
+              aria-label={`Titik kalibrasi ${index + 1}`}
+              className={`calibration-dot ${index < calibrationClicks ? "completed" : ""}`}
+              key={`${left}-${top}`}
+              disabled={index !== calibrationClicks}
+              onClick={(event) => handleCalibrationClick(event, index)}
+              style={calibrationDotPosition(left, top)}
+              type="button"
+            />
+          ))}
+        </section>
+      ) : null}
       {hideSidePanel ? <video ref={cameraPreviewRef} autoPlay muted playsInline className="camera-hidden-preview" /> : null}
 
       <section className={hideSidePanel ? "student-grid side-hidden" : "student-grid"}>
@@ -990,6 +1148,8 @@ export default function StudentPage() {
                         aria-label={feeling.label}
                         className={selectedFeeling === feeling.value ? "feeling-button selected" : "feeling-button"}
                         data-click-component="feeling-button"
+                        data-gaze-component="feeling-button"
+                        data-gaze-label={feeling.label}
                         data-click-label={feeling.label}
                         disabled={!questionDisplayed}
                         key={feeling.value}
@@ -1086,6 +1246,8 @@ export default function StudentPage() {
                       <button
                         className={selectedMultipleChoice === option ? "multiple-choice-option selected" : "multiple-choice-option"}
                         data-click-component="multiple-choice-option"
+                        data-gaze-component="answer-option"
+                        data-gaze-label={option}
                         data-click-label={option}
                         disabled={Boolean(session.assessment_finished)}
                         key={option}
@@ -1124,6 +1286,13 @@ export default function StudentPage() {
                   {cameraReady || session?.camera_source_control === "teacher"
                     ? recordingState
                     : `${recordingState} - klik Izinkan kamera`}
+                </strong>
+              </div>
+              <div className="metric-row">
+                <span>WebGazer</span>
+                <strong className={webgazerStatus === "aktif" ? "status-ok" : webgazerStatus === "gagal" ? "status-warn" : ""}>
+                  <span className={`webgazer-indicator ${webgazerStatus}`} aria-hidden="true" />
+                  {webgazerStatus === "aktif" ? "Aktif - data gaze diterima" : webgazerStatus === "siap" ? "Siap - menunggu gaze" : webgazerStatus === "memuat" ? "Memuat..." : webgazerStatus === "gagal" ? "Gagal dimuat" : "Belum aktif"}
                 </strong>
               </div>
             </section>
@@ -1187,6 +1356,19 @@ function shuffleWordBlocks(options: string[]) {
     [blocks[index], blocks[swapIndex]] = [blocks[swapIndex], blocks[index]];
   }
   return blocks;
+}
+
+function captureScreenLayout(session: SessionState) {
+  const components = Array.from(document.querySelectorAll<HTMLElement>("[data-gaze-component]")).map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { component: element.dataset.gazeComponent, label: element.dataset.gazeLabel ?? element.getAttribute("aria-label") ?? "", rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
+  });
+  return {
+    coordinate_space: "viewport",
+    viewport: { width: window.innerWidth, height: window.innerHeight, device_pixel_ratio: window.devicePixelRatio },
+    question: { id: session.active_question_id, text: session.active_question_text, instruction: session.active_instruction_text, options: session.active_options, scoring_mode: session.active_scoring_mode, theme: session.theme_name },
+    components
+  };
 }
 
 function getAnswerBlocksForQuestion(session: SessionState) {

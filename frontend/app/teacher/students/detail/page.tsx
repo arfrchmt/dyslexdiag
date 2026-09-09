@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BarChart3, Download, FileText, FileVideo, Gauge, NotebookText, Printer, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, Download, Eye, FileText, FileVideo, Gauge, Map, MoreHorizontal, NotebookText, Printer, Route, ScanEye, X } from "lucide-react";
 
 import { assessmentCategories, fetchAssessmentItems, type AssessmentItem } from "@/lib/assessmentContent";
+import { StudentStimulus } from "@/components/StudentStimulus";
 import { apiBase } from "@/lib/session";
-import { fetchStudentDetail, statusLabel, type StudentDetail, type StudentVideoRecord } from "@/lib/students";
+import { analyzeEyeTracker, fetchStudentDetail, statusLabel, type StudentDetail, type StudentVideoRecord } from "@/lib/students";
 
 type DetailSortKey = "sequence_asc" | "date_desc" | "date_asc" | "session_asc" | "session_desc";
 
@@ -19,6 +20,13 @@ export default function StudentDetailPage() {
   const [loading, setLoading] = useState(false);
   const [clientReady, setClientReady] = useState(false);
   const [activeVideo, setActiveVideo] = useState<StudentVideoRecord | null>(null);
+  const [activeHeatmap, setActiveHeatmap] = useState<StudentDetail["questions"][number] | null>(null);
+  const [activeCalibration, setActiveCalibration] = useState<StudentDetail["questions"][number] | null>(null);
+  const [eyeView, setEyeView] = useState<"heatmap" | "trajectory">("heatmap");
+  const [eyeSource, setEyeSource] = useState<"model" | "webgazer">("model");
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
+  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [activeNote, setActiveNote] = useState<StudentDetail["questions"][number] | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -81,6 +89,13 @@ export default function StudentDetailPage() {
       .sort((left, right) => compareQuestions(left, right, sortKey));
   }, [dateFilter, sessionFilter, sortKey, student]);
   const insight = useMemo(() => buildQuestionInsight(visibleQuestions), [visibleQuestions]);
+
+  function openEyeReview(question: StudentDetail["questions"][number], source: "model" | "webgazer", view: "heatmap" | "trajectory") {
+    const key = `eye-review-${Date.now()}`;
+    window.localStorage.setItem(key, JSON.stringify({ question, source, view }));
+    window.open(`/teacher/students/eye-review?key=${encodeURIComponent(key)}`, "_blank", "noopener,noreferrer");
+    setOpenActionMenu(null);
+  }
 
   const summary = selectedSession ?? {
     code: student?.session_code ?? "-",
@@ -306,7 +321,7 @@ export default function StudentDetailPage() {
                   <article className="achievement-item" key={`${question.sequence}-${question.question_id}`}>
                     <div>
                       <span>{question.is_example ? "Contoh" : question.question_id}</span>
-                      <strong>{question.prompt || `Soal ${question.sequence}`}</strong>
+                      <strong>{question.prompt ? <EyeOptionContent value={question.prompt} /> : `Soal ${question.sequence}`}</strong>
                     </div>
                     <div>
                       <span>Status soal</span>
@@ -336,25 +351,32 @@ export default function StudentDetailPage() {
                         <strong>Belum ada</strong>
                       </div>
                     )}
-                    <div>
-                      <span>Nilai</span>
-                      <strong>
-                        {question.score}/{question.max_score}
-                      </strong>
+                    <table className="achievement-metrics"><tbody>
+                      <tr><th>Nilai</th><td>{question.score}/{question.max_score}</td><th>Perasaan</th><td>{question.feeling || "-"}</td></tr>
+                      <tr><th>Durasi</th><td>{formatQuestionDuration(question.duration_ms)}</td><th>Klik</th><td>{question.click_count ?? 0}</td></tr>
+                      <tr><th>Fixation ML</th><td>{question.eye_tracking?.fixation_count ?? 0}</td><th>Regresi ML</th><td>{question.eye_tracking?.regression_count ?? 0}</td></tr>
+                      <tr><th>Saccade ML</th><td>{question.eye_tracking?.saccade_count ?? 0}</td><th>Stdev pupil</th><td>{question.eye_tracking?.pupil_size_stddev != null ? question.eye_tracking.pupil_size_stddev.toFixed(2) : "-"}</td></tr>
+                      <tr><th>Blink rate</th><td>{question.eye_tracking?.blink_rate != null ? `${question.eye_tracking.blink_rate.toFixed(1)}/mnt` : "-"}</td><th>Fixation WebGazer</th><td>{question.eye_tracking_webgazer?.fixation_count ?? 0}</td></tr>
+                      <tr><th>Regresi WebGazer</th><td>{question.eye_tracking_webgazer?.regression_count ?? 0}</td><th>Saccade WebGazer</th><td>{question.eye_tracking_webgazer?.saccade_count ?? 0}</td></tr>
+                      <tr><th>Mean fixation</th><td>{question.eye_tracking_webgazer?.mean_fixation_duration != null ? `${question.eye_tracking_webgazer.mean_fixation_duration.toFixed(2)} dtk` : "-"}</td><th>Total fixation</th><td>{question.eye_tracking_webgazer?.total_fixation_duration != null ? `${question.eye_tracking_webgazer.total_fixation_duration.toFixed(2)} dtk` : "-"}</td></tr>
+                      <tr><th>Revisit</th><td>{question.eye_tracking_webgazer?.revisit_count ?? 0}</td><th>Transisi AOI</th><td>{question.eye_tracking_webgazer?.aoi_transition_count ?? 0}</td></tr>
+                      <tr><th>Dwell stimulus</th><td>{question.eye_tracking_webgazer?.dwell_time_stimulus != null ? `${question.eye_tracking_webgazer.dwell_time_stimulus.toFixed(2)} dtk` : "-"}</td><th>Dwell pilihan</th><td>{question.eye_tracking_webgazer?.dwell_time_options != null ? `${question.eye_tracking_webgazer.dwell_time_options.toFixed(2)} dtk` : "-"}</td></tr>
+                      <tr><th>Response time</th><td>{question.eye_tracking_webgazer?.response_time_ms != null ? `${(question.eye_tracking_webgazer.response_time_ms / 1000).toFixed(2)} dtk` : "-"}</td><th>Correctness</th><td>{question.eye_tracking_webgazer?.correctness == null ? "-" : question.eye_tracking_webgazer.correctness}</td></tr>
+                    </tbody></table>
+                    <div className="achievement-actions" role="tablist" aria-label="Menu detail soal">
+                      <div className="achievement-action-menu">
+                        <button className="action-menu-trigger" role="tab" aria-expanded={openActionMenu === `${question.session_code}-${question.sequence}`} aria-label="Eye Tracker" onClick={() => setOpenActionMenu(openActionMenu === `${question.session_code}-${question.sequence}` ? null : `${question.session_code}-${question.sequence}`)} type="button"><Eye size={16} /><span className="action-label">Eye Tracker</span><ArrowRight size={16} /></button>
+                        {openActionMenu === `${question.session_code}-${question.sequence}` ? <div className="action-menu-list">
+                          <button disabled={analyzing === question.sequence || question.videos.length === 0} type="button" onClick={async () => { if (!student) return; setAnalyzing(question.sequence); try { await analyzeEyeTracker(student.id, question.session_code, question.sequence, window.localStorage.getItem("teacher-jwt") ?? ""); window.location.reload(); } catch (error) { setError(error instanceof Error ? error.message : "Analisis gagal"); } finally { setAnalyzing(null); } }}><ScanEye size={16} />{analyzing === question.sequence ? "Menganalisis..." : "Analisis eyetracker"}</button>
+                          <button type="button" onClick={() => { setActiveCalibration(question); setOpenActionMenu(null); }}><Gauge size={16} />Hasil kalibrasi</button>
+                          <button type="button" onClick={() => openEyeReview(question, "model", "heatmap")}><Map size={16} />Heatmap ML</button>
+                          <button type="button" onClick={() => openEyeReview(question, "webgazer", "heatmap")}><Map size={16} />Heatmap WebGazer</button>
+                          <button type="button" onClick={() => openEyeReview(question, "webgazer", "trajectory")}><Route size={16} />Trajektori WebGazer</button>
+                          <button type="button" onClick={() => { downloadEyeData(question, eyeSource); setOpenActionMenu(null); }}><Download size={16} />Download CSV</button>
+                        </div> : null}
+                      </div>
+                      <button className="note-button" role="tab" type="button" onClick={() => setActiveNote(question)}><FileText size={15} />Catatan <ArrowRight size={14} /></button>
                     </div>
-                    <div>
-                      <span>Perasaan</span>
-                      <strong>{question.feeling || "-"}</strong>
-                    </div>
-                    <div>
-                      <span>Durasi</span>
-                      <strong>{formatQuestionDuration(question.duration_ms)}</strong>
-                    </div>
-                    <div>
-                      <span>Klik</span>
-                      <strong>{question.click_count ?? 0}</strong>
-                    </div>
-                    <p>{question.note || "Belum ada catatan."}</p>
                   </article>
                 ))
               )}
@@ -376,6 +398,42 @@ export default function StudentDetailPage() {
                 <a className="detail-link" href={mediaUrl(activeVideo.source)} target="_blank" rel="noreferrer">
                   Buka file video
                 </a>
+              </div>
+            </div>
+          ) : null}
+          {activeHeatmap ? (
+            <div className="video-player-overlay" role="dialog" aria-modal="true" aria-label="Eye heatmap">
+              <div className="video-player-panel gaze-review-panel">
+                <div className="video-player-head"><div><span>{eyeView === "heatmap" ? "Eye heatmap" : "Trajektori eye gaze"} - {eyeSource === "webgazer" ? "WebGazer" : "ML"}</span><strong>{activeHeatmap.question_id}</strong></div><button onClick={() => setActiveHeatmap(null)} aria-label="Tutup" type="button"><X size={18} /></button></div>
+                <div className="student-shell gaze-replay-screen" style={{ position: "relative", minHeight: 0, padding: 12, overflow: "auto", background: "#eeeae1" }}>
+                  <header className="student-topbar" style={{ position: "relative" }}><div><p className="eyebrow">UI Siswa</p><strong>Asesmen Membaca</strong></div><div className="status-strip"><span>Siswa</span><span>Terhubung</span><span>Fullscreen aktif</span></div></header>
+                  <div style={{ position: "relative", margin: "12px auto", width: "100%" }}><div style={{ position: "relative", zIndex: 1 }}><StudentStimulus questionId={activeHeatmap.question_id} questionText={activeHeatmap.prompt || `Soal ${activeHeatmap.sequence}`} instructionText={assessmentItems.find((item) => item.item_code === activeHeatmap.question_id)?.instruction_text} /></div></div>
+                  <section className="response-panel feeling-panel"><p className="eyebrow">Feedback perasaan</p><div className="feeling-grid"><button className="feeling-button" type="button">😊</button><button className="feeling-button" type="button">😐</button><button className="feeling-button" type="button">😟</button></div></section>
+                  {(assessmentItems.find((item) => item.item_code === activeHeatmap.question_id)?.options ?? []).length > 0 ? <section className="response-panel multiple-choice-panel"><p className="eyebrow">Pilihan jawaban</p><div className="multiple-choice-grid">{(assessmentItems.find((item) => item.item_code === activeHeatmap.question_id)?.options ?? []).map((option) => <div className="multiple-choice-option" key={option}><EyeOptionContent value={option} /></div>)}</div></section> : null}
+                  {((eyeSource === "webgazer" ? activeHeatmap.eye_tracking_webgazer?.heatmap : activeHeatmap.eye_tracking?.heatmap) ?? []).length === 0 ? <p className="muted" style={{ textAlign: "center" }}>Belum ada koordinat gaze. Jalankan Analisis eyetracker terlebih dahulu.</p> : null}
+                  <svg className="gaze-review-layer" aria-label={eyeView === "heatmap" ? "Heatmap perhatian mata" : "Lintasan mata"} viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+                    <defs><marker id="gaze-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" /></marker></defs>
+                    {eyeView === "trajectory" ? <TrajectoryArrows points={(eyeSource === "webgazer" ? activeHeatmap.eye_tracking_webgazer?.trajectory : activeHeatmap.eye_tracking?.trajectory) ?? []} /> : null}
+                    {eyeView === "heatmap" ? (((eyeSource === "webgazer" ? activeHeatmap.eye_tracking_webgazer?.heatmap : activeHeatmap.eye_tracking?.heatmap) ?? []).map((point, index) => <circle key={index} cx={(point.viewport_x ?? point.x) * 1000} cy={(point.viewport_y ?? point.y) * 1000} r={24 + (point.intensity ?? .5) * 35} />)) : null}
+                    {eyeView === "trajectory" ? ((activeHeatmap.eye_tracking_webgazer?.fixations ?? []).map((fixation) => <g key={fixation.index}><circle className="gaze-fixation-mark" cx={(fixation.viewport_x ?? fixation.x) * 1000} cy={(fixation.viewport_y ?? fixation.y) * 1000} r="12" /><text className="gaze-fixation-label" x={(fixation.viewport_x ?? fixation.x) * 1000} y={(fixation.viewport_y ?? fixation.y) * 1000 + 4} textAnchor="middle">{fixation.index}</text></g>)) : null}
+                  </svg>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {activeCalibration ? (
+            <div className="video-player-overlay" role="dialog" aria-modal="true" aria-label="Hasil kalibrasi WebGazer">
+              <div className="video-player-panel calibration-result-panel">
+                <div className="video-player-head"><div><span>Hasil kalibrasi WebGazer</span><strong>{activeCalibration.session_code}</strong></div><button onClick={() => setActiveCalibration(null)} aria-label="Tutup" type="button"><X size={18} /></button></div>
+                <CalibrationResult calibration={activeCalibration.webgazer_calibration} />
+              </div>
+            </div>
+          ) : null}
+          {activeNote ? (
+            <div className="video-player-overlay" role="dialog" aria-modal="true" aria-label="Catatan soal">
+              <div className="video-player-panel note-modal-panel">
+                <div className="video-player-head"><div><span>Catatan soal</span><strong>{activeNote.question_id}</strong></div><button onClick={() => setActiveNote(null)} aria-label="Tutup catatan" type="button"><X size={18} /></button></div>
+                <p className="note-modal-text">{activeNote.note || "Belum ada catatan."}</p>
               </div>
             </div>
           ) : null}
@@ -451,6 +509,70 @@ function csvCell(value: string) {
 function mediaUrl(source: string) {
   if (/^https?:\/\//i.test(source)) return source;
   return `${apiBase}${source}`;
+}
+
+function CalibrationResult({ calibration }: { calibration?: StudentDetail["questions"][number]["webgazer_calibration"] }) {
+  const points = calibration?.points ?? [];
+  const meanError = calibration?.mean_error_px;
+  const quality = meanError == null ? "Belum dapat dinilai" : meanError <= 80 ? "Baik" : meanError <= 150 ? "Perlu perhatian" : "Tidak akurat";
+  if (points.length === 0) {
+    return <div className="calibration-empty"><strong>Belum ada audit kalibrasi untuk sesi ini.</strong><p>Data sesi lama tidak menyimpan target dan prediksi 9 titik. Jalankan sesi baru dan lakukan kalibrasi ulang.</p></div>;
+  }
+  return (
+    <div className="calibration-result-content">
+      <div className="calibration-summary">
+        <div><span>Titik terekam</span><strong>{points.length}/9</strong></div>
+        <div><span>Rata-rata miss</span><strong>{meanError == null ? "-" : `${meanError.toFixed(1)} px`}</strong></div>
+        <div><span>Miss terbesar</span><strong>{calibration?.max_error_px == null ? "-" : `${calibration.max_error_px.toFixed(1)} px`}</strong></div>
+        <div><span>Kualitas</span><strong>{quality}</strong></div>
+      </div>
+      <div className="calibration-map">
+        <svg viewBox="0 0 1000 650" preserveAspectRatio="none" aria-label="Perbandingan target dan prediksi kalibrasi">
+          {points.map((point) => {
+            if (!point.target) return null;
+            const tx = point.target.x * 1000;
+            const ty = point.target.y * 650;
+            const px = point.predicted ? Math.max(0, Math.min(1000, point.predicted.x * 1000)) : tx;
+            const py = point.predicted ? Math.max(0, Math.min(650, point.predicted.y * 650)) : ty;
+            return <g key={point.index}>
+              {point.predicted ? <line x1={tx} y1={ty} x2={px} y2={py} className="calibration-error-line" /> : null}
+              <circle cx={tx} cy={ty} r="20" className="calibration-target-mark" />
+              <text x={tx} y={ty + 6} textAnchor="middle" className="calibration-point-label">{point.index}</text>
+              {point.predicted ? <><line x1={px - 16} y1={py - 16} x2={px + 16} y2={py + 16} className="calibration-prediction-mark" /><line x1={px + 16} y1={py - 16} x2={px - 16} y2={py + 16} className="calibration-prediction-mark" /></> : null}
+            </g>;
+          })}
+        </svg>
+      </div>
+      <div className="calibration-legend"><span><i className="target" />Target klik</span><span><i className="prediction" />Prediksi gaze</span><span>Garis = besar arah miss</span></div>
+      <table className="calibration-point-table"><thead><tr><th>Titik</th><th>Miss</th><th>Sampel</th><th>Status</th></tr></thead><tbody>{points.map((point) => <tr key={point.index}><td>{point.index}</td><td>{point.error_px == null ? "Tidak terbaca" : `${point.error_px.toFixed(1)} px`}</td><td>{point.sample_count ?? 0}</td><td>{point.error_px == null ? "Gaze kosong" : point.error_px <= 80 ? "Baik" : point.error_px <= 150 ? "Meleset" : "Buruk"}</td></tr>)}</tbody></table>
+    </div>
+  );
+}
+
+function TrajectoryArrows({ points }: { points: Array<{ x: number; y: number; viewport_x?: number; viewport_y?: number }> }) {
+  return <>{points.slice(1).map((point, index) => {
+    const previous = points[index];
+    return <line key={index} x1={(previous.viewport_x ?? previous.x) * 1000} y1={(previous.viewport_y ?? previous.y) * 1000} x2={(point.viewport_x ?? point.x) * 1000} y2={(point.viewport_y ?? point.y) * 1000} markerEnd="url(#gaze-arrow)" />;
+  })}</>;
+}
+
+function downloadEyeData(question: StudentDetail["questions"][number], source: "model" | "webgazer") {
+  const data = source === "webgazer" ? question.eye_tracking_webgazer : question.eye_tracking;
+  const rows = [["sequence", "question_id", "source", "point_index", "x_normalized", "y_normalized", "intensity"], ...(data?.trajectory ?? []).map((point, index) => [question.sequence, question.question_id, source, index, point.x, point.y, point.intensity ?? ""])];
+  const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${question.question_id}-${source}-eye-gaze.csv`; anchor.click(); URL.revokeObjectURL(url);
+}
+
+function EyeOptionContent({ value }: { value: string }) {
+  const trimmed = value.trim();
+  let pathname = "";
+  try { pathname = new URL(trimmed).pathname.toLowerCase(); } catch { /* plain text */ }
+  if (/\.(jpe?g|png|gif|webp|bmp|svg)$/.test(pathname)) return <img className="multiple-choice-media compact-option-image" src={trimmed} alt="Pilihan jawaban" />;
+  if (/\.(mp3|wav|ogg|m4a|aac)$/.test(pathname)) return <audio className="multiple-choice-media" controls src={trimmed} />;
+  if (/\.(mp4|webm|mov|m4v)$/.test(pathname)) return <video className="multiple-choice-media" controls playsInline src={trimmed} />;
+  return <span>{value}</span>;
 }
 
 function buildQuestionInsight(questions: StudentDetail["questions"]) {

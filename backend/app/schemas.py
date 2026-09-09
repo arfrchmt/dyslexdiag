@@ -188,6 +188,10 @@ class StudentQuestionPerformance(BaseModel):
     is_example: bool = False
     question_active: bool = True
     videos: list[StudentVideoRecordRead] = Field(default_factory=list)
+    eye_tracking: dict = Field(default_factory=dict)
+    eye_tracking_webgazer: dict = Field(default_factory=dict)
+    webgazer_calibration: dict = Field(default_factory=dict)
+    gaze_layout: dict = Field(default_factory=dict)
 
 
 class StudentPerformanceDetail(StudentListItem):
